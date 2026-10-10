@@ -31,6 +31,7 @@ const fakeLlm = {
       yield { type: 'block-start', index: 0, blockType: 'text' }
       yield { type: 'text-delta', index: 0, text: '**闭包**是' }
       yield { type: 'text-delta', index: 0, text: '一个函数加上它捕获的变量环境。' }
+      yield { type: 'usage', usage: { inputTokens: 189, outputTokens: 395, totalTokens: 584, cacheReadTokens: 256 } }
       yield { type: 'finish', reason: { kind: 'stop' } }
     })()
   },
@@ -179,6 +180,7 @@ assert.equal(happy.status, 200)
 assert.equal(happy.payload.ok, true)
 assert.equal(happy.payload.data.answer, '**闭包**是一个函数加上它捕获的变量环境。')
 assert.equal(happy.payload.data.truncated, false)
+assert.deepEqual(happy.payload.data.usage, { inputTokens: 189, outputTokens: 395, totalTokens: 584, cacheReadTokens: 256 }, 'the answer must report what it cost')
 assert.deepEqual(happy.payload.data.model, PROFILE_DEFAULT)
 assert.ok(lastOptions.maxTokens >= 2000, 'the output ceiling must leave room for hidden reasoning tokens')
 assert.equal(lastOptions.provider, 'deepseek-official')
@@ -352,5 +354,19 @@ assert.equal(seen.length, 1, 'the component must read the owner selector hook ex
 assert.equal(seen[0]({ byId: {} }), undefined, 'the selector must tolerate an empty store')
 assert.equal(seen[0]({ byId: { a: { id: 'a', retainedBy: { mainView: 0 } }, b: { id: 'b', retainedBy: { mainView: 2 } } } }), 'b')
 assert.ok(treeWithSessions && typeof treeWithSessions === 'object')
+
+// The box opens straight from a selection (no pill), reports progress, and
+// reports what the answer cost. The follow-up input was removed on request.
+assert.ok(!clientSource.includes('tg-pill'), 'the click-through pill must be gone: the box opens on selection')
+assert.ok(!clientSource.includes("h('textarea'"), 'the follow-up input must be gone')
+assert.ok(!clientSource.includes('tg-send'), 'the send control must be gone')
+assert.ok(clientSource.includes('tg-thinking'), 'the box must be able to show its progress')
+assert.ok(clientSource.includes('正在思考'), 'the progress label must exist')
+assert.ok(clientSource.includes('tg-usage'), 'the box must be able to show token usage')
+assert.ok(clientSource.includes('usageLine'), 'usage must be rendered from the response')
+
+// The overlay box must not be torn down by a collapsing page selection: the
+// state it hangs on is only cleared by close().
+assert.ok(!/setEntry\(null\)[\s\S]{0,80}readSelection/.test(clientSource), 'selection tracking must not clear the open box')
 
 console.log('verify-plugin: all checks passed')

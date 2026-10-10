@@ -1,6 +1,6 @@
 {
   "name": "dsh-term-glossary",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "选中对话中的术语，在旁边就地追问释义：基本含义、用途、用法。",

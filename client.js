@@ -1,10 +1,11 @@
 /**
  * Browser half of `dsh-term-glossary`.
  *
- * Registers one entry in the frame-wide `shell.overlay` slot: it watches the
- * page text selection, offers a small "解释" pill beside the selected term, and
- * opens a compact follow-up box anchored to that selection. Answers come from
- * the package's Host half over `/api/term-glossary/explain`.
+ * Registers one entry in the frame-wide `shell.overlay` slot. Selecting text
+ * opens a small explanation box right away — no second click — and the box then
+ * STAYS open until it is dismissed (Esc, ×, or a click outside). While the
+ * answer is on its way the box shows its progress, and when the answer lands
+ * the box also reports how many tokens that answer cost.
  *
  * Hand-written `__ModuleLoader__` shell: plain JavaScript, no JSX, no imports;
  * React arrives through the module table.
@@ -25,45 +26,36 @@ window.__ModuleLoader__.load({
     const PLUGIN_ID = 'dsh-term-glossary';
     const LOCALE_NS = 'term-glossary';
     const MAX_TERM_CHARS = 120;
-    const PANEL_WIDTH = 360;
-    const PANEL_MAX_HEIGHT = 460;
+    const PANEL_WIDTH = 380;
+    const PANEL_MAX_HEIGHT = 480;
 
     const MESSAGES = {
       en: {
-        explain: 'Explain',
         title: 'Term look-up',
-        placeholder: 'Follow-up question… (Enter to send)',
-        send: 'Send',
         thinking: 'Thinking…',
         close: 'Close',
-        initial: 'Explain this term:',
-        hint: 'Select a term in the conversation',
-        empty: 'Ask a follow-up below.',
         noAnswer: 'No answer returned',
-        truncated: 'The answer reached the length limit — ask a follow-up to continue.',
+        truncated: 'The answer reached the length limit.',
+        usage: 'tokens',
+        input: 'in',
+        output: 'out',
+        total: 'total',
       },
       zh: {
-        explain: '解释',
         title: '术语速查',
-        placeholder: '追问…（回车发送）',
-        send: '发送',
-        thinking: '思考中…',
+        thinking: '正在思考…',
         close: '关闭',
-        initial: '请解释术语：',
-        hint: '在对话中选中一个术语',
-        empty: '可以在下面继续追问。',
         noAnswer: '没有返回内容',
-        truncated: '回答达到长度上限，可以继续追问。',
+        truncated: '回答达到长度上限。',
+        usage: 'token',
+        input: '输入',
+        output: '输出',
+        total: '合计',
       },
     };
 
     const CSS = [
       '[data-term-glossary]{--tg-radius:10px;font-size:13px;line-height:1.6;}',
-      '.tg-pill{position:fixed;pointer-events:auto;display:inline-flex;align-items:center;gap:4px;',
-      'padding:5px 10px;border-radius:999px;border:1px solid var(--dsw-alias-border-l2);',
-      'background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary);cursor:pointer;',
-      'font:inherit;font-size:12px;box-shadow:0 6px 18px rgba(0,0,0,.18);}',
-      '.tg-pill:hover{border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-brand-primary);}',
       '.tg-panel{position:fixed;pointer-events:auto;display:flex;flex-direction:column;overflow:hidden;',
       'border-radius:var(--tg-radius);border:1px solid var(--dsw-alias-border-l1);',
       'background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary);',
@@ -74,10 +66,7 @@ window.__ModuleLoader__.load({
       '.tg-icon{pointer-events:auto;border:0;background:transparent;color:var(--dsw-alias-label-secondary);',
       'cursor:pointer;font:inherit;font-size:15px;line-height:1;padding:2px 4px;border-radius:6px;}',
       '.tg-icon:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);}',
-      '.tg-body{flex:1;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:8px;}',
-      '.tg-msg-ask{align-self:flex-end;max-width:88%;padding:6px 9px;border-radius:9px;',
-      'background:var(--dsw-alias-bg-layer-2);white-space:pre-wrap;word-break:break-word;}',
-      '.tg-msg-answer{align-self:stretch;word-break:break-word;}',
+      '.tg-body{flex:1;overflow-y:auto;padding:10px;word-break:break-word;}',
       '.tg-p{margin:0 0 6px;}',
       '.tg-p:last-child{margin-bottom:0;}',
       '.tg-h{font-weight:600;margin:2px 0 6px;}',
@@ -89,18 +78,14 @@ window.__ModuleLoader__.load({
       'background:var(--dsw-alias-bg-layer-2);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;}',
       '.tg-code{padding:1px 4px;border-radius:5px;background:var(--dsw-alias-bg-layer-2);',
       'font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;}',
-      '.tg-status{padding:0 10px 8px;color:var(--dsw-alias-label-secondary);font-size:12px;}',
-      '.tg-error{padding:0 10px 8px;color:var(--dsw-alias-state-error-primary);font-size:12px;word-break:break-word;}',
-      '.tg-foot{display:flex;gap:6px;align-items:flex-end;padding:8px 10px;border-top:1px solid var(--dsw-alias-border-l1);}',
-      '.tg-input{flex:1;min-width:0;resize:none;max-height:96px;padding:6px 8px;border-radius:8px;',
-      'border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-base);',
-      'color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;outline:none;}',
-      '.tg-input:focus{border-color:var(--dsw-alias-brand-primary);}',
-      '.tg-send{pointer-events:auto;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;',
-      'background:var(--dsw-alias-brand-primary);color:var(--dsw-alias-bg-overlay);cursor:pointer;',
-      'font:inherit;font-size:12px;padding:6px 10px;}',
-      '.tg-send:disabled{opacity:.5;cursor:default;}',
-      '.tg-spin{display:inline-block;width:10px;height:10px;margin-right:6px;vertical-align:-1px;',
+      '.tg-thinking{display:flex;align-items:center;color:var(--dsw-alias-label-secondary);font-size:12px;}',
+      '.tg-truncated{margin-top:6px;color:var(--dsw-alias-state-warn-primary);font-size:12px;}',
+      '.tg-error{color:var(--dsw-alias-state-error-primary);font-size:12px;word-break:break-word;}',
+      '.tg-foot{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:6px 10px;',
+      'border-top:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-secondary);font-size:11px;}',
+      '.tg-usage{font-variant-numeric:tabular-nums;}',
+      '.tg-model{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}',
+      '.tg-spin{display:inline-block;width:10px;height:10px;margin-right:6px;flex:none;',
       'border:2px solid var(--dsw-alias-border-l2);border-top-color:var(--dsw-alias-brand-primary);',
       'border-radius:50%;animation:tg-spin .8s linear infinite;}',
       '@keyframes tg-spin{to{transform:rotate(360deg);}}',
@@ -121,7 +106,7 @@ window.__ModuleLoader__.load({
       }
       try {
         const bound = hostLocale.bind(LOCALE_NS);
-        if (bound('explain') !== 'explain') hostTranslate = bound;
+        if (bound('thinking') !== 'thinking') hostTranslate = bound;
       } catch {
         /* keep the built-in table */
       }
@@ -163,7 +148,7 @@ window.__ModuleLoader__.load({
         if (match[1] !== undefined) {
           parts.push(h('code', { key: `${prefix}-c${i++}`, className: 'tg-code' }, match[1]));
         } else {
-          parts.push(h('strong', { key: `${prefix}-b${i++}` }, match[2]));
+          parts.push(h('strong', { key: `${prefix}-b${i++}`, }, match[2]));
         }
         last = match.index + match[0].length;
       }
@@ -221,7 +206,7 @@ window.__ModuleLoader__.load({
       return blocks;
     }
 
-    /** ── selection tracking ──────────────────────────────────────────────── */
+    /** ── selection and placement ─────────────────────────────────────────── */
 
     function elementOf(node) {
       if (!node) return null;
@@ -242,6 +227,7 @@ window.__ModuleLoader__.load({
       }
     }
 
+    /** Read the current page selection, or null when it is not a usable term. */
     function readSelection() {
       const selection = window.getSelection?.();
       if (!selection || selection.isCollapsed || selection.rangeCount === 0) return null;
@@ -298,32 +284,118 @@ window.__ModuleLoader__.load({
       return undefined;
     }
 
+    /** How many tokens that answer cost, plus the route that produced it. */
+    function usageLine(answer) {
+      const usage = answer?.usage;
+      if (!usage) return null;
+      const input = Number(usage.inputTokens) || 0;
+      const output = Number(usage.outputTokens) || 0;
+      const total = Number(usage.totalTokens) || input + output;
+      // Order matters for readability: the provider's total counts the cached
+      // input too, so input + cache + output is what adds up to the total.
+      const parts = [`${t('input')} ${input}`];
+      if (Number(usage.cacheReadTokens) > 0) parts.push(`cache ${usage.cacheReadTokens}`);
+      parts.push(`${t('output')} ${output}`, `${t('total')} ${total}`);
+      return h(
+        'div',
+        { className: 'tg-foot' },
+        h('span', { className: 'tg-usage' }, `${t('usage')}：${parts.join(' · ')}`),
+        answer?.model
+          ? h(
+              'span',
+              { className: 'tg-model', title: `${answer.model.provider}/${answer.model.model}` },
+              `${answer.model.provider}/${answer.model.model}`,
+            )
+          : null,
+      );
+    }
+
     function GlossaryOverlay(props) {
       // Called unconditionally so the hook order stays stable for this entry.
       const useSessions = typeof props?.useSessions === 'function' ? props.useSessions : useNoSession;
       const sessionId = useSessions(selectMainSessionId);
 
-      const [picked, setPicked] = useState(null);
-      const [open, setOpen] = useState(false);
-      const [turns, setTurns] = useState([]);
+      // `entry` is the open box. It is deliberately NOT cleared when the page
+      // selection collapses: clicking inside the box collapses the selection,
+      // and an earlier version closed the box on that event — which made the box
+      // flash away and its controls unclickable.
+      const [entry, setEntry] = useState(null);
+      const [answer, setAnswer] = useState(null);
       const [busy, setBusy] = useState(false);
       const [error, setError] = useState(null);
-      const [draft, setDraft] = useState('');
 
       const panelRef = useRef(null);
-      const inputRef = useRef(null);
-      const pickedRef = useRef(null);
+      const entryRef = useRef(null);
       const sessionRef = useRef(sessionId);
-      const turnsRef = useRef([]);
-      const busyRef = useRef(false);
-      const signatureRef = useRef('');
+      const requestRef = useRef(null);
 
-      pickedRef.current = picked;
+      entryRef.current = entry;
       sessionRef.current = sessionId;
-      turnsRef.current = turns;
-      busyRef.current = busy;
 
-      // Track the page selection: a small pill appears beside the selected term.
+      const request = useCallback(async (target) => {
+        const previous = requestRef.current;
+        if (previous?.controller?.abort) previous.controller.abort();
+        const controller = typeof AbortController === 'function' ? new AbortController() : null;
+        requestRef.current = { controller };
+
+        setBusy(true);
+        setAnswer(null);
+        setError(null);
+        try {
+          const response = await fetch(API_PATH, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', 'x-dsh-plugin': PLUGIN_ID },
+            body: JSON.stringify({
+              term: target.term,
+              context: target.context,
+              sessionId: sessionRef.current || undefined,
+            }),
+            signal: controller ? controller.signal : undefined,
+          });
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok || payload?.ok === false) {
+            throw new Error(payload?.error?.message || `HTTP ${response.status}`);
+          }
+          setAnswer({
+            text: String(payload?.data?.answer ?? '').trim() || t('noAnswer'),
+            truncated: payload?.data?.truncated === true,
+            usage: payload?.data?.usage,
+            model: payload?.data?.model,
+          });
+        } catch (failure) {
+          if (failure?.name !== 'AbortError') setError(String(failure?.message ?? failure));
+        } finally {
+          if (requestRef.current?.controller === controller) {
+            requestRef.current = null;
+            setBusy(false);
+          }
+        }
+      }, []);
+
+      const close = useCallback(() => {
+        if (requestRef.current?.controller?.abort) requestRef.current.controller.abort();
+        requestRef.current = null;
+        setEntry(null);
+        setAnswer(null);
+        setError(null);
+        setBusy(false);
+      }, []);
+
+      const openFor = useCallback(
+        (next) => {
+          const current = entryRef.current;
+          if (current && current.term === next.term) {
+            // Same term (the selection re-fired): keep the answer, follow the rect.
+            setEntry((prev) => (prev ? { ...prev, rect: next.rect } : prev));
+            return;
+          }
+          setEntry(next);
+          void request(next);
+        },
+        [request],
+      );
+
+      // A fresh selection opens (or re-targets) the box immediately.
       useEffect(() => {
         let timer = 0;
         const schedule = () => {
@@ -331,10 +403,7 @@ window.__ModuleLoader__.load({
           timer = setTimeout(() => {
             timer = 0;
             const next = readSelection();
-            const signature = next ? `${next.term}|${Math.round(next.rect.left)},${Math.round(next.rect.top)}` : '';
-            if (signature === signatureRef.current) return;
-            signatureRef.current = signature;
-            setPicked(next);
+            if (next) openFor(next);
           }, 20);
         };
         document.addEventListener('mouseup', schedule, true);
@@ -346,20 +415,11 @@ window.__ModuleLoader__.load({
           document.removeEventListener('keyup', schedule, true);
           document.removeEventListener('selectionchange', schedule);
         };
-      }, []);
+      }, [openFor]);
 
-      const close = useCallback(() => {
-        setOpen(false);
-        setTurns([]);
-        setError(null);
-        setDraft('');
-        signatureRef.current = '';
-        setPicked(null);
-      }, []);
-
-      // Escape closes; a click outside the panel closes.
+      // Escape closes; a click outside the box closes.
       useEffect(() => {
-        if (!open) return undefined;
+        if (!entry) return undefined;
         const onKeyDown = (event) => {
           if (event.key === 'Escape') close();
         };
@@ -373,86 +433,15 @@ window.__ModuleLoader__.load({
           document.removeEventListener('keydown', onKeyDown, true);
           document.removeEventListener('mousedown', onPointerDown, true);
         };
-      }, [open, close]);
+      }, [entry, close]);
 
-      const ask = useCallback(async (question) => {
-        const current = pickedRef.current;
-        if (!current) return;
-        const history = turnsRef.current.map((turn) => ({ role: turn.role, text: turn.text }));
-        if (question) setTurns((prev) => [...prev, { role: 'user', text: question }]);
-        setBusy(true);
-        setError(null);
-        try {
-          const response = await fetch(API_PATH, {
-            method: 'POST',
-            headers: { 'content-type': 'application/json', 'x-dsh-plugin': PLUGIN_ID },
-            body: JSON.stringify({
-              term: current.term,
-              context: current.context,
-              question: question || undefined,
-              sessionId: sessionRef.current || undefined,
-              history,
-            }),
-          });
-          const payload = await response.json().catch(() => ({}));
-          if (!response.ok || payload?.ok === false) {
-            throw new Error(payload?.error?.message || `HTTP ${response.status}`);
-          }
-          const answer = String(payload?.data?.answer ?? '').trim();
-          const truncated = payload?.data?.truncated === true;
-          let shown = answer || t('noAnswer');
-          if (truncated && answer !== '') shown = `${shown}\n\n_${t('truncated')}_`;
-          setTurns((prev) => [...prev, { role: 'assistant', text: shown }]);
-        } catch (failure) {
-          setError(String(failure?.message ?? failure));
-        } finally {
-          setBusy(false);
-        }
-      }, []);
-
-      const openPanel = useCallback(() => {
-        setOpen(true);
-        setTurns([]);
-        setError(null);
-        setDraft('');
-        void ask(null);
-      }, [ask]);
-
-      const submit = useCallback(() => {
-        const question = draft.trim();
-        if (question === '' || busyRef.current) return;
-        setDraft('');
-        void ask(question);
-      }, [draft, ask]);
-
-      useEffect(() => {
-        if (open && inputRef.current) inputRef.current.focus();
-      }, [open]);
-
-      const panel = open && picked ? clampPanel(picked.rect) : null;
+      const placement = entry ? clampPanel(entry.rect) : null;
 
       return h(
         'div',
         { 'data-term-glossary': 'root', style: { position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 60 } },
         h('style', null, CSS),
-        !open && picked
-          ? h(
-              'button',
-              {
-                type: 'button',
-                className: 'tg-pill',
-                title: `${t('explain')}: ${picked.term}`,
-                style: {
-                  left: `${Math.min(picked.rect.right + 6, Math.max(12, window.innerWidth - 96))}px`,
-                  top: `${Math.min(picked.rect.bottom + 6, Math.max(12, window.innerHeight - 40))}px`,
-                },
-                onMouseDown: (event) => event.preventDefault(),
-                onClick: openPanel,
-              },
-              t('explain'),
-            )
-          : null,
-        open && picked && panel
+        entry && placement
           ? h(
               'div',
               {
@@ -460,51 +449,29 @@ window.__ModuleLoader__.load({
                 className: 'tg-panel',
                 role: 'dialog',
                 'aria-label': t('title'),
-                style: { left: `${panel.left}px`, top: `${panel.top}px`, width: `${panel.width}px`, maxHeight: `${PANEL_MAX_HEIGHT}px` },
+                style: {
+                  left: `${placement.left}px`,
+                  top: `${placement.top}px`,
+                  width: `${placement.width}px`,
+                  maxHeight: `${PANEL_MAX_HEIGHT}px`,
+                },
               },
               h(
                 'div',
                 { className: 'tg-head' },
-                h('span', { className: 'tg-term', title: picked.term }, picked.term),
+                h('span', { className: 'tg-term', title: entry.term }, entry.term),
                 h('span', { className: 'tg-badge' }, t('title')),
                 h('button', { type: 'button', className: 'tg-icon', 'aria-label': t('close'), onClick: close }, '×'),
               ),
               h(
                 'div',
                 { className: 'tg-body' },
-                turns.length === 0 && !busy ? h('div', { className: 'tg-msg-answer' }, t('empty')) : null,
-                turns.map((turn, index) =>
-                  turn.role === 'user'
-                    ? h('div', { key: `t${index}`, className: 'tg-msg-ask' }, turn.text)
-                    : h('div', { key: `t${index}`, className: 'tg-msg-answer' }, renderRich(turn.text)),
-                ),
+                busy ? h('div', { className: 'tg-thinking' }, h('span', { className: 'tg-spin' }), t('thinking')) : null,
+                answer ? renderRich(answer.text) : null,
+                answer?.truncated ? h('div', { className: 'tg-truncated' }, t('truncated')) : null,
+                error ? h('div', { className: 'tg-error' }, error) : null,
               ),
-              busy ? h('div', { className: 'tg-status' }, h('span', { className: 'tg-spin' }), t('thinking')) : null,
-              error ? h('div', { className: 'tg-error' }, error) : null,
-              h(
-                'div',
-                { className: 'tg-foot' },
-                h('textarea', {
-                  ref: inputRef,
-                  className: 'tg-input',
-                  rows: 1,
-                  value: draft,
-                  placeholder: t('placeholder'),
-                  'aria-label': t('placeholder'),
-                  onChange: (event) => setDraft(event.target.value),
-                  onKeyDown: (event) => {
-                    if (event.key === 'Enter' && !event.shiftKey) {
-                      event.preventDefault();
-                      submit();
-                    }
-                  },
-                }),
-                h(
-                  'button',
-                  { type: 'button', className: 'tg-send', disabled: busy || draft.trim() === '', onClick: submit },
-                  t('send'),
-                ),
-              ),
+              usageLine(answer),
             )
           : null,
       );
