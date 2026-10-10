@@ -1,0 +1,14 @@
+# Bundle patch for dsh-term-glossary.
+#
+# One host row mounts this package's Node half (the /api/term-glossary route);
+# the browser half joins the Client module graph automatically because the
+# manifest declares `dsh.client` (platform: web) and exports "./client".
+#
+# Optional row config: `provider` and `model` override the auxiliary call's
+# route; when omitted, the plugin uses the profile's default model selection
+# (agent-default-model), which is what the desktop profile patches to
+# deepseek-official / deepseek-flash.
+- insert:
+    - id: term-glossary
+      name: dsh-term-glossary
+      config: {}

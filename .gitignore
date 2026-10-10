@@ -1,0 +1,10 @@
+# Extracted DSH package documentation and sources live here during development.
+# They are DeepSeek Harness internals, not this plugin's content: never publish them.
+reference/
+
+# One-shot verification packages used while developing (installed then removed).
+probe/
+
+# Scratch
+node_modules/
+*.log

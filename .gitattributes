@@ -1,0 +1,4 @@
+# The plugin is plain JavaScript shipped as-is; keep every text file LF so a
+# Windows clone does not rewrite line endings.
+* text=auto eol=lf
+*.svg text eol=lf
