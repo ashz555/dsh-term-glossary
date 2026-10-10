@@ -2,8 +2,9 @@
  * Local smoke test for dsh-term-glossary, runnable before installation.
  *
  * It exercises the Host half against a fake Cordis context (route registration,
- * header check, body validation, model route resolution, stream assembly) and
- * loads the browser half's factory to confirm it registers into `shell.overlay`.
+ * header check, body validation, model route resolution, conversation-background
+ * collection, stream assembly) and loads the browser half's factory to confirm
+ * it registers into `shell.overlay`.
  *
  * Usage: node tools/verify-plugin.mjs
  */
@@ -14,7 +15,7 @@ import { fileURLToPath } from 'node:url'
 import vm from 'node:vm'
 
 const pkgDir = new URL('../dsh-term-glossary/', import.meta.url)
-const host = await import(new URL('index.js', pkgDir).href)
+const host = await import(new URL('lib/impl.js', pkgDir).href)
 
 /* ── fake Cordis context ──────────────────────────────────────────────── */
 
@@ -34,12 +35,38 @@ const fakeLlm = {
   },
 }
 
+const DOCUMENTS = [
+  { type: 'system/message', seq: 0, text: '系统提示，不能当背景' },
+  { type: 'user/message', seq: 1, text: '这份病历里的 "SOAP" 是什么意思？' },
+  { type: 'assistant/message', seq: 2, text: '它指主观、客观、评估、计划四个部分。' },
+  { type: 'tool/call', seq: 3, text: '{"name":"read"}' },
+  { type: 'user/message', seq: 4, text: '那 "鉴别诊断" 呢？' },
+  {
+    type: 'user/message',
+    seq: 5,
+    text: 'Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\nCurrent DSH file policy: workspace-write.',
+  },
+  { type: 'user/message', seq: 6, text: 'The approval policy changed from "ask" to "never" (changed by the user).' },
+  { type: 'user/message', seq: 7, text: '那 "鉴别诊断" 呢？' },
+]
+
+const fakeSessionQuery = {
+  async readTitle(sessionId) {
+    return { title: '临床笔记整理' }
+  },
+  async filterEvents(sessionId, filters) {
+    assert.ok(Array.isArray(filters) && filters[0].kind === 'type', 'filterEvents must be called with a type filter')
+    return DOCUMENTS
+  },
+}
+
 const PROFILE_DEFAULT = { provider: 'deepseek-official', model: 'deepseek-flash' }
 
 function makeCtx(options = {}) {
   const registered = { route: null }
+  const llm = options.llm ?? fakeLlm
   const ctx = {
-    llm: fakeLlm,
+    llm,
     webServer: {
       register(candidate) {
         registered.route = candidate
@@ -51,9 +78,19 @@ function makeCtx(options = {}) {
       return () => {}
     },
     get(name) {
-      if (name === 'llm') return fakeLlm
+      if (name === 'llm') return llm
       if (name === 'agentDefaultModel') {
         return options.withoutDefaultModel ? undefined : { currentSelection: () => PROFILE_DEFAULT }
+      }
+      if (name === 'sessionQuery') {
+        if (options.withoutSessionQuery) return undefined
+        if (options.throwingSessionQuery) {
+          return {
+            async readTitle() { throw new Error('no such session') },
+            async filterEvents() { throw new Error('backend down') },
+          }
+        }
+        return fakeSessionQuery
       }
       return undefined
     },
@@ -106,33 +143,106 @@ async function call(handler, method, headers, body) {
 const PLUGIN_HEADERS = { 'x-dsh-plugin': 'dsh-term-glossary' }
 const lastMessageText = () => lastOptions.messages.at(-1).content[0].text
 
+/* ── conversation background (pure) ───────────────────────────────────── */
+
+const lines = host.backgroundLines(DOCUMENTS)
+assert.deepEqual(lines, [
+  '读者：这份病历里的 "SOAP" 是什么意思？',
+  '读者：那 "鉴别诊断" 呢？',
+], 'background must keep only the reader\'s own turns, in order')
+
+assert.deepEqual(
+  host.backgroundLines([{ type: 'assistant/message', seq: 1, text: 'write {"content": "noise"}' }]),
+  [],
+  'assistant documents carry tool payloads and must not become clues',
+)
+
+const many = []
+for (let index = 0; index < 40; index += 1) {
+  many.push({ type: 'user/message', seq: index, text: `第 ${index} 条消息` })
+}
+const capped = host.backgroundLines(many)
+assert.ok(capped.length <= 6, `background must cap the turn count, got ${capped.length}`)
+assert.equal(capped.at(-1), '读者：第 39 条消息', 'background must keep the newest turns')
+assert.ok(capped.join('').length <= 1500, 'background must stay inside its character budget')
+
+const longLine = host.backgroundLines([{ type: 'user/message', seq: 0, text: 'x'.repeat(5000) }])
+assert.equal(longLine[0].length, 3 + 400, 'each background turn must be clipped')
+
+assert.deepEqual(host.backgroundLines([{ type: 'system/message', text: 'nope' }]), [])
+
 /* ── cases ────────────────────────────────────────────────────────────── */
 
 const happy = await call(route.handler, 'POST', PLUGIN_HEADERS, { term: '闭包', context: '于是我们用闭包保存状态。', history: [] })
 assert.equal(happy.status, 200)
 assert.equal(happy.payload.ok, true)
 assert.equal(happy.payload.data.answer, '**闭包**是一个函数加上它捕获的变量环境。')
+assert.equal(happy.payload.data.truncated, false)
 assert.deepEqual(happy.payload.data.model, PROFILE_DEFAULT)
+assert.ok(lastOptions.maxTokens >= 2000, 'the output ceiling must leave room for hidden reasoning tokens')
 assert.equal(lastOptions.provider, 'deepseek-official')
 assert.equal(lastOptions.model, 'deepseek-flash')
 assert.ok(typeof lastOptions.system === 'string' && lastOptions.system.length > 0, 'call must carry the system prompt')
 assert.equal(lastOptions.messages.length, 1)
 assert.equal(lastOptions.messages[0].role, 'user')
 assert.match(lastMessageText(), /闭包/)
-assert.match(lastMessageText(), /追问|请解释/)
+assert.ok(!lastMessageText().includes('【对话背景'), 'a request without a session id must not carry background')
 
-const followUp = await call(route.handler, 'POST', PLUGIN_HEADERS, {
-  term: '闭包',
-  question: '它和匿名函数是一回事吗？',
-  history: [
-    { role: 'user', text: '术语：「闭包」' },
-    { role: 'assistant', text: '闭包是……' },
-  ],
+// A session id turns the reader's own conversation into domain evidence.
+const withSession = await call(route.handler, 'POST', PLUGIN_HEADERS, {
+  term: 'SOAP',
+  question: '和 SOAP 协议有关系吗？',
+  sessionId: 'session-1234-abcd',
+  history: [{ role: 'user', text: '术语：「SOAP」' }, { role: 'assistant', text: '它是病历记录格式。' }],
 })
-assert.equal(followUp.status, 200)
+assert.equal(withSession.status, 200)
 assert.equal(lastOptions.messages.length, 3, 'history turns must precede the new question')
-assert.match(lastOptions.messages[2].content[0].text, /匿名函数/)
+const rich = lastMessageText()
+assert.ok(rich.startsWith('【对话背景'), 'background must lead the final user message')
+assert.match(rich, /会话标题：临床笔记整理/)
+assert.match(rich, /读者：这份病历里的 "SOAP" 是什么意思？/)
+assert.ok(!rich.includes('系统提示，不能当背景'), 'background must ignore non-user events')
+assert.ok(!rich.includes('它指主观、客观、评估、计划四个部分。'), 'background must ignore assistant tool payloads')
+assert.match(rich, /读者的追问：和 SOAP 协议有关系吗？/)
 
+// A malformed session id is ignored rather than rejected.
+const badSession = await call(route.handler, 'POST', PLUGIN_HEADERS, { term: 'SOAP', sessionId: 'not a session id' })
+assert.equal(badSession.status, 200)
+assert.ok(!lastMessageText().includes('【对话背景'), 'a malformed session id must not produce background')
+
+// A model that stops at the output ceiling reports a partial answer honestly
+// instead of presenting a half sentence as complete (observed in real use: the
+// reasoning tokens of one clue-carrying answer consumed 859 of 900).
+const truncating = makeCtx({
+  llm: {
+    stream(options) {
+      lastOptions = options
+      return (async function* () {
+        yield { type: 'text-delta', index: 0, text: '好处是解耦，' }
+        yield { type: 'finish', reason: { kind: 'max-tokens' } }
+      })()
+    },
+  },
+})
+host.apply(truncating.ctx, {})
+const cut = await call(truncating.registered.route.handler, 'POST', PLUGIN_HEADERS, { term: '注入' })
+assert.equal(cut.status, 200)
+assert.equal(cut.payload.data.truncated, true, 'a capped answer must be reported as truncated')
+assert.equal(cut.payload.data.answer, '好处是解耦，')
+
+// A failing or absent sessionQuery degrades to a plain answer.
+const throwing = makeCtx({ throwingSessionQuery: true })
+host.apply(throwing.ctx, {})
+const degraded = await call(throwing.registered.route.handler, 'POST', PLUGIN_HEADERS, { term: 'SOAP', sessionId: 'session-1234-abcd' })
+assert.equal(degraded.status, 200)
+assert.ok(!lastMessageText().includes('【对话背景'), 'a failing sessionQuery must degrade, not fail')
+
+const withoutQuery = makeCtx({ withoutSessionQuery: true })
+host.apply(withoutQuery.ctx, {})
+const plain = await call(withoutQuery.registered.route.handler, 'POST', PLUGIN_HEADERS, { term: 'SOAP', sessionId: 'session-1234-abcd' })
+assert.equal(plain.status, 200)
+
+// Input guards.
 const noTerm = await call(route.handler, 'POST', PLUGIN_HEADERS, { term: '   ' })
 assert.equal(noTerm.status, 400)
 assert.equal(noTerm.payload.error.code, 'MISSING_TERM')
@@ -160,6 +270,17 @@ host.apply(bare.ctx, {})
 const bareRes = await call(bare.registered.route.handler, 'POST', PLUGIN_HEADERS, { term: 'RAII' })
 assert.equal(bareRes.status, 503)
 assert.equal(bareRes.payload.error.code, 'NO_MODEL_ROUTE')
+
+/* ── loader shim: the entry must mount the impl in-process ────────────── */
+
+const shim = await import(new URL('index.js', pkgDir).href)
+assert.equal(Array.from(shim.inject).join(','), 'webServer,llm', 'the shim must declare the same hard dependencies')
+const shimmed = makeCtx()
+await shim.apply(shimmed.ctx, {})
+assert.ok(shimmed.registered.route, 'the shim must pass the impl\'s route registration through')
+const shimRes = await call(shimmed.registered.route.handler, 'POST', PLUGIN_HEADERS, { term: '闭包' })
+assert.equal(shimRes.status, 200)
+assert.equal(shimRes.payload.data.answer, '**闭包**是一个函数加上它捕获的变量环境。')
 
 /* ── browser half: the factory must register one overlay entry ─────────── */
 
@@ -210,11 +331,25 @@ assert.equal(registrations.length, 1)
 assert.equal(registrations[0].options.name, 'shell.overlay')
 assert.equal(registrations[0].options.id, 'term-glossary')
 assert.equal(typeof registrations[0].component, 'function')
+assert.equal(registrations[0].options.order, 40)
 
 // The component must render without a DOM: one fixed, click-through layer.
 const tree = registrations[0].component({})
 assert.ok(tree && typeof tree === 'object', 'component must return a React element tree')
 assert.equal(tree.args[0], 'div')
 assert.equal(tree.args[1].style.pointerEvents, 'none')
+
+// The owner's session selector is consulted for the current Session id.
+const seen = []
+const treeWithSessions = registrations[0].component({
+  useSessions: (selector) => {
+    seen.push(selector)
+    return selector({ byId: { 'session-1234-abcd': { id: 'session-1234-abcd', retainedBy: { mainView: 1 } } } })
+  },
+})
+assert.equal(seen.length, 1, 'the component must read the owner selector hook exactly once')
+assert.equal(seen[0]({ byId: {} }), undefined, 'the selector must tolerate an empty store')
+assert.equal(seen[0]({ byId: { a: { id: 'a', retainedBy: { mainView: 0 } }, b: { id: 'b', retainedBy: { mainView: 2 } } } }), 'b')
+assert.ok(treeWithSessions && typeof treeWithSessions === 'object')
 
 console.log('verify-plugin: all checks passed')

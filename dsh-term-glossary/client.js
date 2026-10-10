@@ -40,6 +40,7 @@ window.__ModuleLoader__.load({
         hint: 'Select a term in the conversation',
         empty: 'Ask a follow-up below.',
         noAnswer: 'No answer returned',
+        truncated: 'The answer reached the length limit — ask a follow-up to continue.',
       },
       zh: {
         explain: '解释',
@@ -52,6 +53,7 @@ window.__ModuleLoader__.load({
         hint: '在对话中选中一个术语',
         empty: '可以在下面继续追问。',
         noAnswer: '没有返回内容',
+        truncated: '回答达到长度上限，可以继续追问。',
       },
     };
 
@@ -273,7 +275,33 @@ window.__ModuleLoader__.load({
 
     /** ── the overlay entry ───────────────────────────────────────────────── */
 
-    function GlossaryOverlay() {
+    /**
+     * Which Session the main conversation view is currently showing, read
+     * through the slot owner's `useSessions` selector hook. The Host half uses
+     * this id to pull a little of that conversation as domain evidence.
+     */
+    function selectMainSessionId(state) {
+      try {
+        const sessions = state?.byId ?? {};
+        for (const key of Object.keys(sessions)) {
+          const session = sessions[key];
+          if ((session?.retainedBy?.mainView ?? 0) > 0) return session?.id ?? key;
+        }
+      } catch {
+        /* the store shape changed: answer without a session clue */
+      }
+      return undefined;
+    }
+
+    /** Hook-position fallback for a composition whose owner passes no selector. */
+    function useNoSession() {
+      return undefined;
+    }
+
+    function GlossaryOverlay(props) {
+      // Called unconditionally so the hook order stays stable for this entry.
+      const useSessions = typeof props?.useSessions === 'function' ? props.useSessions : useNoSession;
+      const sessionId = useSessions(selectMainSessionId);
 
       const [picked, setPicked] = useState(null);
       const [open, setOpen] = useState(false);
@@ -285,11 +313,13 @@ window.__ModuleLoader__.load({
       const panelRef = useRef(null);
       const inputRef = useRef(null);
       const pickedRef = useRef(null);
+      const sessionRef = useRef(sessionId);
       const turnsRef = useRef([]);
       const busyRef = useRef(false);
       const signatureRef = useRef('');
 
       pickedRef.current = picked;
+      sessionRef.current = sessionId;
       turnsRef.current = turns;
       busyRef.current = busy;
 
@@ -360,6 +390,7 @@ window.__ModuleLoader__.load({
               term: current.term,
               context: current.context,
               question: question || undefined,
+              sessionId: sessionRef.current || undefined,
               history,
             }),
           });
@@ -368,7 +399,10 @@ window.__ModuleLoader__.load({
             throw new Error(payload?.error?.message || `HTTP ${response.status}`);
           }
           const answer = String(payload?.data?.answer ?? '').trim();
-          setTurns((prev) => [...prev, { role: 'assistant', text: answer || t('noAnswer') }]);
+          const truncated = payload?.data?.truncated === true;
+          let shown = answer || t('noAnswer');
+          if (truncated && answer !== '') shown = `${shown}\n\n_${t('truncated')}_`;
+          setTurns((prev) => [...prev, { role: 'assistant', text: shown }]);
         } catch (failure) {
           setError(String(failure?.message ?? failure));
         } finally {
