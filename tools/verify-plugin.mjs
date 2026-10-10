@@ -14,7 +14,8 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import vm from 'node:vm'
 
-const pkgDir = new URL('../dsh-term-glossary/', import.meta.url)
+/** The plugin package is the repository root, so the test resolves against its parent. */
+const pkgDir = new URL('../', import.meta.url)
 const host = await import(new URL('lib/impl.js', pkgDir).href)
 
 /* ── fake Cordis context ──────────────────────────────────────────────── */
