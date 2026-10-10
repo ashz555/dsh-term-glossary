@@ -11,6 +11,12 @@
 
 被选中的术语会连同它所在的句子一起发送，所以「这个」「它」之类的指代也能问。
 
+## 安装
+
+需要带 Web 界面的 DSH（Desktop 或 `dsh web`）：本插件声明了 `webServer` 与 `llm` 两个硬依赖，缺一不会激活。插件没有发布到 npm 或插件市场，从源码安装：在 DSH 对话里让 Agent 安装**本目录**（等价工具调用：`plugin_manager` / `action: install_bundle` / `target: <本目录的绝对路径>`）。
+
+安装注册的是一个 `link:` 依赖 —— profile 直接指向这份源码，所以**装好后不要移动或删除本目录**。卸载用 `plugin_manager` 的 `remove_bundle`。完整说明见[仓库根 README](https://github.com/ashz555/dsh-term-glossary#安装)。
+
 ## 领域适配（方案 B：让模型自取线索）
 
 插件不预设领域。每次请求都由 Host 半边读取**当前会话自己的内容**作为领域线索，交给模型自行判断术语属于哪个领域（计算机 / 医学 / 法律 / 金融 / 化学 …），并要求用该领域通行的说法解释。
