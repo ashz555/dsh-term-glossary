@@ -1,11 +1,37 @@
 {
   "name": "dsh-term-glossary",
   "version": "0.3.0",
-  "private": true,
   "type": "module",
-  "description": "选中对话中的术语，在旁边就地追问释义：基本含义、用途、用法。",
+  "description": "Select a term in a DeepSeek Harness conversation and read its explanation in place — meaning, purpose, usage — with the token cost of that answer shown. · 选中对话里的术语就地解释（基本含义 / 用途 / 用法），并显示本次 token 用量。",
+  "license": "MIT",
   "icon": "./icon.svg",
   "main": "index.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ashz555/dsh-term-glossary.git"
+  },
+  "homepage": "https://github.com/ashz555/dsh-term-glossary#readme",
+  "bugs": {
+    "url": "https://github.com/ashz555/dsh-term-glossary/issues"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek",
+    "deepseek-harness",
+    "harness-plugin",
+    "glossary",
+    "dictionary",
+    "term",
+    "explain",
+    "selection",
+    "tooltip",
+    "术语",
+    "划词"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",
