@@ -94,6 +94,13 @@ function makeCtx(options = {}) {
         }
         return fakeSessionQuery
       }
+      if (name === 'agents') {
+        // A live agent whose logged request route differs from the profile default.
+        if (!options.agentsSession) return undefined
+        return {
+          get: () => ({ session: { requestHeader: () => ({ config: options.agentsSession }) } }),
+        }
+      }
       return undefined
     },
   }
@@ -266,6 +273,75 @@ const configured = makeCtx()
 host.apply(configured.ctx, { provider: 'deepseek-official', model: 'deepseek-reasoner' })
 await call(configured.registered.route.handler, 'POST', PLUGIN_HEADERS, { term: 'RAII' })
 assert.equal(lastOptions.model, 'deepseek-reasoner', 'row config must override the default route')
+
+/* ── route preference and the transport fallback ──────────────────────── */
+
+const routeCtx = {
+  get: (name) => {
+    if (name === 'agents') return { get: () => ({ session: { requestHeader: () => ({ config: { provider: 'session-p', model: 'session-m' } }) } }) }
+    if (name === 'agentDefaultModel') return { currentSelection: () => ({ provider: 'default-p', model: 'default-m' }) }
+    return undefined
+  },
+}
+assert.deepEqual(
+  host.candidateRoutes({}, routeCtx, 'session-1234-abcd').map((route) => `${route.provider}/${route.model}`),
+  ['session-p/session-m', 'default-p/default-m'],
+  'the reader\'s own conversation route must be tried before the profile default',
+)
+assert.deepEqual(
+  host.candidateRoutes({ provider: 'session-p', model: 'session-m' }, routeCtx, 'session-1234-abcd').map((route) => `${route.provider}/${route.model}`),
+  ['session-p/session-m', 'default-p/default-m'],
+  'duplicate routes must be dropped',
+)
+assert.deepEqual(
+  host.candidateRoutes({}, routeCtx, '').map((route) => `${route.provider}/${route.model}`),
+  ['default-p/default-m'],
+  'without a session id there is no conversation route to prefer',
+)
+
+// A transport failure (the reader's machine cannot reach that route) moves on
+// to the next candidate instead of showing a raw English provider error.
+let attempts = 0
+const flakyLlm = {
+  stream(options) {
+    lastOptions = options
+    attempts += 1
+    const attempt = attempts
+    return (async function* () {
+      if (attempt === 1) {
+        yield { type: 'finish', reason: { kind: 'error', failure: { code: 'TRANSPORT', message: 'DeepSeek Messages transport failed' } } }
+        return
+      }
+      yield { type: 'text-delta', index: 0, text: '第二次路由成功。' }
+      yield { type: 'finish', reason: { kind: 'stop' } }
+    })()
+  },
+}
+const flaky = makeCtx({ llm: flakyLlm, agentsSession: { provider: 'session-p', model: 'session-m' } })
+host.apply(flaky.ctx, {})
+const recovered = await call(flaky.registered.route.handler, 'POST', PLUGIN_HEADERS, { term: '闭包', sessionId: 'session-1234-abcd' })
+assert.equal(recovered.status, 200, 'a transport failure must be retried on the next route')
+assert.equal(attempts, 2, 'exactly one fallback attempt')
+assert.equal(recovered.payload.data.answer, '第二次路由成功。')
+assert.deepEqual(recovered.payload.data.model, PROFILE_DEFAULT, 'the fallback used the profile default')
+
+// When every route fails, the reader gets a plain-language message naming the
+// routes that were tried, not just the provider's English error.
+const deadLlm = {
+  stream() {
+    return (async function* () {
+      yield { type: 'finish', reason: { kind: 'error', failure: { code: 'TRANSPORT', message: 'DeepSeek Messages transport failed' } } }
+    })()
+  },
+}
+const dead = makeCtx({ llm: deadLlm, agentsSession: { provider: 'session-p', model: 'session-m' } })
+host.apply(dead.ctx, {})
+const deadRes = await call(dead.registered.route.handler, 'POST', PLUGIN_HEADERS, { term: '闭包', sessionId: 'session-1234-abcd' })
+assert.equal(deadRes.status, 502)
+assert.equal(deadRes.payload.error.code, 'TRANSPORT')
+assert.match(deadRes.payload.error.message, /模型调用失败/, 'the message must say what happened in Chinese')
+assert.match(deadRes.payload.error.message, /session-p\/session-m/, 'the message must name the routes tried')
+assert.match(deadRes.payload.error.message, /不是插件本身/, 'the message must point away from the plugin as the fault')
 
 // Without a default model and without row config the caller gets a usable error.
 const bare = makeCtx({ withoutDefaultModel: true })
