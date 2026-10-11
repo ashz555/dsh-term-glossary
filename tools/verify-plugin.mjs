@@ -355,11 +355,19 @@ assert.equal(seen[0]({ byId: {} }), undefined, 'the selector must tolerate an em
 assert.equal(seen[0]({ byId: { a: { id: 'a', retainedBy: { mainView: 0 } }, b: { id: 'b', retainedBy: { mainView: 2 } } } }), 'b')
 assert.ok(treeWithSessions && typeof treeWithSessions === 'object')
 
-// The box opens straight from a selection (no pill), reports progress, and
-// reports what the answer cost. The follow-up input was removed on request.
-assert.ok(!clientSource.includes('tg-pill'), 'the click-through pill must be gone: the box opens on selection')
+// Selecting text only offers a button; the search itself starts on that click.
+const countOf = (text, needle) => text.split(needle).length - 1
+assert.ok(clientSource.includes('tg-pill'), 'the trigger button must exist')
+assert.ok(clientSource.includes("t('explain')"), 'the button must carry a label')
+assert.ok(clientSource.includes('onClick: () => openPanel(picked)'), 'the button click is what opens the box')
+assert.equal(countOf(clientSource, 'void request('), 1, 'the search must start from exactly one place (openPanel)')
+assert.ok(clientSource.includes('buttonGuardRef'), 'a press on the button must not unmount it before the click lands')
+
+// The follow-up input stays removed.
 assert.ok(!clientSource.includes("h('textarea'"), 'the follow-up input must be gone')
 assert.ok(!clientSource.includes('tg-send'), 'the send control must be gone')
+
+// Progress and cost still surface inside the box.
 assert.ok(clientSource.includes('tg-thinking'), 'the box must be able to show its progress')
 assert.ok(clientSource.includes('正在思考'), 'the progress label must exist')
 assert.ok(clientSource.includes('tg-usage'), 'the box must be able to show token usage')

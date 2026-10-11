@@ -34,6 +34,7 @@ window.__ModuleLoader__.load({
         title: 'Term look-up',
         thinking: 'Thinking…',
         close: 'Close',
+        explain: 'Search',
         noAnswer: 'No answer returned',
         truncated: 'The answer reached the length limit.',
         usage: 'tokens',
@@ -45,6 +46,7 @@ window.__ModuleLoader__.load({
         title: '术语速查',
         thinking: '正在思考…',
         close: '关闭',
+        explain: '搜索',
         noAnswer: '没有返回内容',
         truncated: '回答达到长度上限。',
         usage: 'token',
@@ -56,6 +58,13 @@ window.__ModuleLoader__.load({
 
     const CSS = [
       '[data-term-glossary]{--tg-radius:10px;font-size:13px;line-height:1.6;}',
+      // The trigger button follows the live selection; the box below does not.
+      '.tg-pill{position:fixed;pointer-events:auto;display:inline-flex;align-items:center;gap:4px;',
+      'padding:5px 11px;border-radius:999px;border:1px solid var(--dsw-alias-border-l2);',
+      'background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary);cursor:pointer;',
+      'font:inherit;font-size:12px;box-shadow:0 6px 18px rgba(0,0,0,.18);}',
+      '.tg-pill:hover{border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-brand-primary);}',
+      '.tg-pill:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px;}',
       '.tg-panel{position:fixed;pointer-events:auto;display:flex;flex-direction:column;overflow:hidden;',
       'border-radius:var(--tg-radius);border:1px solid var(--dsw-alias-border-l1);',
       'background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary);',
@@ -315,10 +324,14 @@ window.__ModuleLoader__.load({
       const useSessions = typeof props?.useSessions === 'function' ? props.useSessions : useNoSession;
       const sessionId = useSessions(selectMainSessionId);
 
-      // `entry` is the open box. It is deliberately NOT cleared when the page
-      // selection collapses: clicking inside the box collapses the selection,
-      // and an earlier version closed the box on that event — which made the box
-      // flash away and its controls unclickable.
+      // Two independent pieces of state, on purpose:
+      //  - `picked` follows the LIVE page selection and only drives the trigger
+      //    button. It is allowed to disappear when the selection collapses.
+      //  - `entry` is the open box. It is deliberately NOT cleared by a
+      //    collapsing selection: clicking inside the box collapses the
+      //    selection, and an earlier version closed the box on that event —
+      //    which made the box flash away and its controls unclickable.
+      const [picked, setPicked] = useState(null);
       const [entry, setEntry] = useState(null);
       const [answer, setAnswer] = useState(null);
       const [busy, setBusy] = useState(false);
@@ -328,6 +341,10 @@ window.__ModuleLoader__.load({
       const entryRef = useRef(null);
       const sessionRef = useRef(sessionId);
       const requestRef = useRef(null);
+      const signatureRef = useRef('');
+      // A press on the button may collapse the selection right before the click
+      // lands; hold `picked` briefly so the button cannot unmount mid-click.
+      const buttonGuardRef = useRef(0);
 
       entryRef.current = entry;
       sessionRef.current = sessionId;
@@ -381,21 +398,17 @@ window.__ModuleLoader__.load({
         setBusy(false);
       }, []);
 
-      const openFor = useCallback(
-        (next) => {
-          const current = entryRef.current;
-          if (current && current.term === next.term) {
-            // Same term (the selection re-fired): keep the answer, follow the rect.
-            setEntry((prev) => (prev ? { ...prev, rect: next.rect } : prev));
-            return;
-          }
-          setEntry(next);
-          void request(next);
+      /** The reader pressed the button: open the box for that term and search. */
+      const openPanel = useCallback(
+        (target) => {
+          setPicked(null);
+          setEntry(target);
+          void request(target);
         },
         [request],
       );
 
-      // A fresh selection opens (or re-targets) the box immediately.
+      // Selecting text only offers the button; it does not search on its own.
       useEffect(() => {
         let timer = 0;
         const schedule = () => {
@@ -403,7 +416,11 @@ window.__ModuleLoader__.load({
           timer = setTimeout(() => {
             timer = 0;
             const next = readSelection();
-            if (next) openFor(next);
+            if (next === null && Date.now() < buttonGuardRef.current) return;
+            const signature = next ? `${next.term}|${Math.round(next.rect.left)},${Math.round(next.rect.top)}` : '';
+            if (signature === signatureRef.current) return;
+            signatureRef.current = signature;
+            setPicked(next);
           }, 20);
         };
         document.addEventListener('mouseup', schedule, true);
@@ -415,7 +432,7 @@ window.__ModuleLoader__.load({
           document.removeEventListener('keyup', schedule, true);
           document.removeEventListener('selectionchange', schedule);
         };
-      }, [openFor]);
+      }, []);
 
       // Escape closes; a click outside the box closes.
       useEffect(() => {
@@ -436,11 +453,36 @@ window.__ModuleLoader__.load({
       }, [entry, close]);
 
       const placement = entry ? clampPanel(entry.rect) : null;
+      // The button follows the live selection, unless the open box already
+      // answers exactly that term.
+      const showButton = picked !== null && (entry === null || entry.term !== picked.term);
 
       return h(
         'div',
         { 'data-term-glossary': 'root', style: { position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 60 } },
         h('style', null, CSS),
+        showButton
+          ? h(
+              'button',
+              {
+                type: 'button',
+                className: 'tg-pill',
+                title: `${t('explain')}：${picked.term}`,
+                'aria-label': `${t('explain')}：${picked.term}`,
+                style: {
+                  left: `${Math.min(picked.rect.right + 6, Math.max(12, window.innerWidth - 96))}px`,
+                  top: `${Math.min(picked.rect.bottom + 6, Math.max(12, window.innerHeight - 40))}px`,
+                },
+                onMouseDown: (event) => {
+                  // Keep the selection alive so the click below still lands.
+                  event.preventDefault();
+                  buttonGuardRef.current = Date.now() + 800;
+                },
+                onClick: () => openPanel(picked),
+              },
+              t('explain'),
+            )
+          : null,
         entry && placement
           ? h(
               'div',
