@@ -29,7 +29,21 @@
 
 **前置条件**：带 Web 界面的 DSH（Desktop 应用，或 `dsh web` 启的 Web 版）。插件声明了 `webServer` 与 `llm` 两个硬依赖：前者用来挂它自己的 `/api/term-glossary/explain` 路由，后者用来发那次旁路模型调用；两者缺一，插件不会激活。
 
-### 装法一：从 npm 装（推荐，一条命令）
+### 给非技术用户：三步，不用命令行
+
+1. 打开 DSH，随便进一个对话。
+2. 把这句话发给它：**帮我安装插件 dsh-term-glossary**
+   （说得更明确一点也可以：*用 plugin_manager 的 install_bundle 安装 dsh-term-glossary*）
+3. 等它回复装好后，按 `Ctrl + R` 刷新页面。
+
+然后就能用了：在对话里用鼠标**选中一个术语** → 它旁边浮出「**搜索**」按钮 → 点一下，就地看到「基本含义 / 用途 / 用法」和这次消耗的 token。
+
+> **如果 Agent 说装不上**（多半是网络到不了 npm），走这两条备选：
+> - 插件市场：**设置 → 插件 → 市场**，搜 `术语速查`（上架审核通过后可用）；
+> - 或者让它从这个地址装：
+>   `https://github.com/ashz555/dsh-term-glossary/releases/download/v0.3.0/dsh-term-glossary-0.3.0.tgz`
+
+### 装法一：从 npm 装（推荐）
 
 已发布到 npm，拿到的是**预构建产物**（免本地构建授权，国内镜像也已同步，不必访问 GitHub）：
 
