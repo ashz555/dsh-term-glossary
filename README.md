@@ -1,10 +1,12 @@
 # dsh-term-glossary（术语速查）
 
+[![npm](https://img.shields.io/npm/v/dsh-term-glossary.svg)](https://www.npmjs.com/package/dsh-term-glossary)
+
 选中 DSH 对话里的一个术语，点它旁边浮出的「搜索」按钮，就在原地弹出一个小框解释**基本含义 → 用途 → 用法**，并显示这次解释花了多少 token。不需要另开对话，也不会占用当前会话的轮次与上下文。
 
 ## 版本与分支
 
-仓库根目录就是插件包本身（`package.json` 在根），可以直接作为 git 依赖引用。
+仓库根目录就是插件包本身（`package.json` 在根），已发布到 npm：[`dsh-term-glossary`](https://www.npmjs.com/package/dsh-term-glossary)，也可以直接作为 git 依赖引用。
 
 | 版本 | 分支 | 标签 | 说明 |
 |---|---|---|---|
@@ -27,6 +29,18 @@
 
 **前置条件**：带 Web 界面的 DSH（Desktop 应用，或 `dsh web` 启的 Web 版）。插件声明了 `webServer` 与 `llm` 两个硬依赖：前者用来挂它自己的 `/api/term-glossary/explain` 路由，后者用来发那次旁路模型调用；两者缺一，插件不会激活。
 
+### 装法一：从 npm 装（推荐，一条命令）
+
+已发布到 npm，拿到的是**预构建产物**（免本地构建授权，国内镜像也已同步，不必访问 GitHub）：
+
+```powershell
+dsh plugin --profile <你的 profile> add dsh-term-glossary
+```
+
+在 DSH 里也可以直接让 Agent 装：*「用 plugin_manager 安装 dsh-term-glossary」*。
+
+### 装法二：从源码装（想改代码、或想用 `v2`/`main` 这些旧版本时）
+
 **1. 拿到源码。** 当前**默认分支就是 `v3`（第三版）**，直接 clone 即可：
 
 ```powershell
@@ -41,7 +55,7 @@ git clone https://github.com/ashz555/dsh-term-glossary.git
 
 等价的工具调用参数是 `plugin_manager` / `action: install_bundle` / `target: <仓库根的绝对路径>`。它会自己完成依赖安装、bundle 注册与启用；**不要手工去改 profile 的 `package.json` 或 `cordis.patch.yml`，也不要在 profile 目录里跑 pnpm** —— 那几步正是 `install_bundle` 代做的。
 
-也可以把本仓库当作 git 依赖来装（`github:ashz555/dsh-term-glossary#v3`）：仓库根现在是合法包，这条路成立的前提是 pnpm 能访问 github.com —— 我这台机器上 github.com 不通，所以**没能实测这条路径**，本地 clone + Agent 安装那条是我实际验证过的。
+也可以把本仓库当作 git 依赖来装（`github:ashz555/dsh-term-glossary#v3`），或指向 Release 里的预构建包（`https://github.com/ashz555/dsh-term-glossary/releases/download/v0.3.0/dsh-term-glossary-0.3.0.tgz`）；正常用户用装法一即可。
 
 **3. 确认生效。** 安装结果应为 `application: applied`（不是 `restart-required`），随后刷新页面即可用。若这个 profile 之前加载过同名插件的另一份代码（尤其是插件目录搬过位置），Host 侧必须重启一次 dsh 才会换成新的。
 
