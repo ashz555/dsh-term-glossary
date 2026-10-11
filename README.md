@@ -27,11 +27,13 @@
 
 **前置条件**：带 Web 界面的 DSH（Desktop 应用，或 `dsh web` 启的 Web 版）。插件声明了 `webServer` 与 `llm` 两个硬依赖：前者用来挂它自己的 `/api/term-glossary/explain` 路由，后者用来发那次旁路模型调用；两者缺一，插件不会激活。
 
-**1. 拿到源码。** 默认分支 `main` 是第一版；要最新的第三版请指定 `v3`（第二版是 `v2`）：
+**1. 拿到源码。** 当前**默认分支就是 `v3`（第三版）**，直接 clone 即可：
 
 ```powershell
-git clone -b v3 https://github.com/ashz555/dsh-term-glossary.git
+git clone https://github.com/ashz555/dsh-term-glossary.git
 ```
+
+要看别的版本：第一版在 `main`（`git clone -b main …`），第二版在 `v2`。
 
 **2. 在 DSH 对话里让 Agent 安装这个目录**（仓库根就是插件包）：
 
