@@ -2,8 +2,8 @@
  * Browser half of `dsh-term-glossary`.
  *
  * Registers one entry in the frame-wide `shell.overlay` slot. Selecting text
- * opens a small explanation box right away — no second click — and the box then
- * STAYS open until it is dismissed (Esc, ×, or a click outside). While the
+ * only offers a trigger button; pressing it opens the explanation box, which
+ * then STAYS open until it is dismissed (Esc, ×, or a click outside). While the
  * answer is on its way the box shows its progress, and when the answer lands
  * the box also reports how many tokens that answer cost.
  *
@@ -329,8 +329,8 @@ window.__ModuleLoader__.load({
       //    button. It is allowed to disappear when the selection collapses.
       //  - `entry` is the open box. It is deliberately NOT cleared by a
       //    collapsing selection: clicking inside the box collapses the
-      //    selection, and an earlier version closed the box on that event —
-      //    which made the box flash away and its controls unclickable.
+      //    selection, and clearing it on that event would make the box flash
+      //    away and its controls unclickable.
       const [picked, setPicked] = useState(null);
       const [entry, setEntry] = useState(null);
       const [answer, setAnswer] = useState(null);

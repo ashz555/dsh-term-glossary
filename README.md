@@ -2,137 +2,97 @@
 
 [![npm](https://img.shields.io/npm/v/dsh-term-glossary.svg)](https://www.npmjs.com/package/dsh-term-glossary)
 
-选中 DSH 对话里的一个术语，点它旁边浮出的「搜索」按钮，就在原地弹出一个小框解释**基本含义 → 用途 → 用法**，并显示这次解释花了多少 token。不需要另开对话，也不会占用当前会话的轮次与上下文。
+在 DSH 对话中选中一个术语，点击选区旁的「搜索」按钮，就地查看该术语的解释：基本含义、用途、常见用法，并附带本次回答的 token 用量。解释通过旁路模型调用完成，不占用当前会话的轮次与上下文。
 
-## 版本与分支
+## 版本
 
-仓库根目录就是插件包本身（`package.json` 在根），已发布到 npm：[`dsh-term-glossary`](https://www.npmjs.com/package/dsh-term-glossary)，也可以直接作为 git 依赖引用。
+仓库根目录即插件包（`package.json` 位于根目录）。包已发布至 npm：[`dsh-term-glossary`](https://www.npmjs.com/package/dsh-term-glossary)，也可作为 git 依赖或预构建包安装。
 
-| 版本 | 分支 | 标签 | 说明 |
+| 版本 | 标签 | 分支 | 主要变化 |
 |---|---|---|---|
-| 第一版 | `main` | `v0.1.0` | 选中术语 + 就地解释框。Host 半边是单体实现，只有「选中的术语 + 所在句子」作为上下文，提示词面向计算机领域读者。 |
-| 第二版 | `v2` | `v0.2.0` | 在 v1 之上加了三件事：**方案 B 领域适配**（Host 用 `sessionQuery` 读取会话标题与读者自己的话作为领域线索，交给模型自行判断术语属于哪个领域）、**截断如实上报**（该模型隐藏推理 token 计入 `maxTokens`，实测一次带线索的回答用掉 859/900 导致半句话返回，现上限 2400 且停在上限时返回 `truncated`）、**loader shim**（`index.js` 以 `?v=<内容哈希>` 载入 `lib/impl.js`，此后 Host 侧改动重装即生效、无需重启 dsh）。 |
-| 第三版 | `v3` | `v0.3.0` → `v0.3.1` | 交互重做：选中文本先浮出**「搜索」按钮**，由读者决定何时发问（不自动发请求）；解释框**常驻直到主动关闭**、等待期间显示「正在思考…」、落地后显示本次 **token 用量**与模型；**移除了框内追问输入**（旧实现里框绑定在页面选区状态上，一点进框选区就被清空、框随即卸载，所以追问框点不动、框也会闪没）。**v0.3.1 修复**：改用「会话自己的路由 → profile 默认模型」的顺序，并在传输失败时自动换下一条路由重试一次——解决"当前对话正常、插件却报 `DeepSeek Messages transport failed`"；报错信息也换成中文并列出试过的路由。 |
+| 0.1.0 | `v0.1.0` | `main` | 首个版本：选中术语后就地显示解释。Host 半边为单体实现，仅以「选中的术语 + 所在句子」作为上下文，提示词面向计算机领域读者。 |
+| 0.2.0 | `v0.2.0` | `v2` | 增加会话线索领域适配；输出上限提高至 2400 token 并新增 `truncated` 标记；`index.js` 改为按内容哈希装载 `lib/impl.js`，Host 侧改动无需重启 dsh 即可生效。 |
+| 0.3.0 | `v0.3.0` | `v3` | 交互重做：选中文本后先显示「搜索」按钮，由读者决定何时发起请求；解释框常驻至主动关闭，等待期间显示进度，返回后显示 token 用量与模型；移除框内追问输入。 |
+| 0.3.1 | `v0.3.1` | `v3` | 模型路由自适应：按会话当前路由、profile 默认模型依次尝试，传输层失败时自动换用下一条路由重试一次；错误信息本地化并列出已尝试的路由。 |
 
-想看差异：`git diff main v3`。
+查看版本差异：`git diff main v3`。
 
 ## 用法
 
-1. 在对话（或任意正文区域）里用鼠标选中一个术语 —— 选区旁浮出一个「搜索」按钮，此时**不会**发任何请求。
-2. 点「搜索」，就地弹出解释框并显示「正在思考…」。
-3. 回答出现后，框底会列出本次消耗的 token（输入 / 缓存 / 输出 / 合计）与使用的模型。
-4. 框会一直留着，直到你按 `Esc`、点右上角 `×`、或点击框外任意位置；框开着时也可以选中另一个词、再点按钮换词解释。
+1. 在对话或任意正文区域选中一个术语，选区旁显示「搜索」按钮；此时不会发起任何请求。
+2. 点击「搜索」，就地弹出解释框并显示进度。
+3. 回答返回后，框底列出本次消耗的 token（输入 / 缓存 / 输出 / 合计）与使用的模型。
+4. 按下 `Esc`、点击右上角 `×` 或点击框外任意位置可关闭解释框。解释框打开期间，仍可选中其他术语并点击按钮发起新的解释。
 
-被选中的术语会连同它所在的句子一起发送，所以「这个」「它」之类的指代也能问。框内**不支持追问** —— 想追问就直接在对话里问。
+被选中的术语会连同所在句子一并发送，因此「这个」「它」等指代性表述同样可用。框内不支持追问，如需继续提问请在对话中进行。
 
 ## 安装
 
-**前置条件**：带 Web 界面的 DSH（Desktop 应用，或 `dsh web` 启的 Web 版）。插件声明了 `webServer` 与 `llm` 两个硬依赖：前者用来挂它自己的 `/api/term-glossary/explain` 路由，后者用来发那次旁路模型调用；两者缺一，插件不会激活。
+**前置条件**：带 Web 界面的 DSH，即 Desktop 应用或 `dsh web` 启动的 Web 版本。插件声明了 `webServer` 与 `llm` 两个硬依赖：前者用于注册 `/api/term-glossary/explain` 路由，后者用于发起旁路模型调用；两者缺一时插件不会激活。
 
-### 给非技术用户：三步，不用命令行
+### 方式一：从 npm 安装（推荐）
 
-1. 打开 DSH，随便进一个对话。
-2. 把这句话发给它：**帮我安装插件 dsh-term-glossary**
-   （说得更明确一点也可以：*用 plugin_manager 的 install_bundle 安装 dsh-term-glossary*）
-3. 等它回复装好后，按 `Ctrl + R` 刷新页面。
-
-然后就能用了：在对话里用鼠标**选中一个术语** → 它旁边浮出「**搜索**」按钮 → 点一下，就地看到「基本含义 / 用途 / 用法」和这次消耗的 token。
-
-> **如果 Agent 说装不上**（多半是网络到不了 npm），走这两条备选：
-> - 插件市场：**设置 → 插件 → 市场**，搜 `术语速查`（上架审核通过后可用）；
-> - 或者让它从这个地址装：
->   `https://github.com/ashz555/dsh-term-glossary/releases/download/v0.3.0/dsh-term-glossary-0.3.0.tgz`
-
-### 装法一：从 npm 装（推荐）
-
-已发布到 npm，拿到的是**预构建产物**（免本地构建授权，国内镜像也已同步，不必访问 GitHub）：
+npm 提供的是预构建产物，无需本地构建授权，国内镜像已同步，安装过程不需要访问 GitHub：
 
 ```powershell
-dsh plugin --profile <你的 profile> add dsh-term-glossary
+dsh plugin --profile <profile 名称> add dsh-term-glossary
 ```
 
-在 DSH 里也可以直接让 Agent 装：*「用 plugin_manager 安装 dsh-term-glossary」*。
+也可在 DSH 对话中交由 Agent 完成安装，例如发送：**帮我安装插件 dsh-term-glossary**（等价说法：*用 plugin_manager 的 install_bundle 安装 dsh-term-glossary*）。安装完成后按 `Ctrl + R` 刷新页面即可使用。
 
-### 装法二：从源码装（想改代码、或想用 `v2`/`main` 这些旧版本时）
+### 方式二：从源码安装
 
-**1. 拿到源码。** 当前**默认分支就是 `v3`（第三版）**，直接 clone 即可：
+适用于需要修改代码，或需要使用 `v2`、`main` 等旧版本的情况。
+
+**1. 获取源码。** 默认分支为 `v3`，直接 clone 即可：
 
 ```powershell
 git clone https://github.com/ashz555/dsh-term-glossary.git
 ```
 
-要看别的版本：第一版在 `main`（`git clone -b main …`），第二版在 `v2`。
-
-**2. 在 DSH 对话里让 Agent 安装这个目录**（仓库根就是插件包）：
+**2. 安装本地目录。** 在 DSH 对话中让 Agent 安装该目录（仓库根即插件包）：
 
 > 用 plugin_manager 的 install_bundle，安装 `D:\path\to\dsh-term-glossary`
 
-等价的工具调用参数是 `plugin_manager` / `action: install_bundle` / `target: <仓库根的绝对路径>`。它会自己完成依赖安装、bundle 注册与启用；**不要手工去改 profile 的 `package.json` 或 `cordis.patch.yml`，也不要在 profile 目录里跑 pnpm** —— 那几步正是 `install_bundle` 代做的。
+等价的工具调用参数为 `plugin_manager` / `action: install_bundle` / `target: <仓库根的绝对路径>`。依赖安装、bundle 注册与启用均由该调用完成，无需手工修改 profile 的 `package.json` 或 `cordis.patch.yml`，也不需要在 profile 目录中执行 pnpm。
 
-也可以把本仓库当作 git 依赖来装（`github:ashz555/dsh-term-glossary#v3`），或指向 Release 里的预构建包（`https://github.com/ashz555/dsh-term-glossary/releases/download/v0.3.0/dsh-term-glossary-0.3.0.tgz`）；正常用户用装法一即可。
+**3. 确认生效。** 安装结果应为 `application: applied`，而非 `restart-required`；随后刷新页面即可使用。若该 profile 此前加载过同名插件的另一份代码（例如插件目录曾变更位置），需要重启一次 dsh 才会切换到新的实现。
 
-**3. 确认生效。** 安装结果应为 `application: applied`（不是 `restart-required`），随后刷新页面即可用。若这个 profile 之前加载过同名插件的另一份代码（尤其是插件目录搬过位置），Host 侧必须重启一次 dsh 才会换成新的。
+**其他安装来源**：也可将本仓库作为 git 依赖安装（`github:ashz555/dsh-term-glossary#v3`），或指向 Release 中的预构建包：
 
-**为什么装完不能移动或删除目录**：`install_bundle` 注册的是 `link:<该目录>` 依赖 —— profile 直接指向这份源码，而不是复制一份。目录被移走或删掉，插件就失效，需要重新安装。
+```powershell
+dsh plugin --profile <profile 名称> add https://github.com/ashz555/dsh-term-glossary/releases/download/v0.3.0/dsh-term-glossary-0.3.0.tgz
+```
 
-**卸载**：让 Agent 用 `plugin_manager` / `action: remove_bundle` / `target: dsh-term-glossary`，或在插件管理页面里禁用 / 移除该 bundle。
+> **网络受限时的备选方案**：插件市场（设置 → 插件 → 市场，搜索「术语速查」，上架审核通过后可用），或使用上方的 Release 预构建包地址。
 
-> ⚠️ 开发提示：本仓库的工作树同时就是被 `link:` 的插件目录。**切分支会改变 profile 正在加载的插件**（从 `v3` 切到 `main` 等于把线上插件换成第一版）。想对比另一个版本，请用 `git worktree add ../check <branch>` 在别处检出。
+### 安装位置与移动限制
 
-## 领域适配（方案 B：让模型自取线索）
+`install_bundle` 注册的是 `link:<该目录>` 依赖，profile 直接指向该源码目录而非另行复制。目录被移动或删除后插件即失效，需要重新安装。
 
-插件不预设领域。每次请求都由 Host 半边读取**当前会话自己的内容**作为领域线索，交给模型自行判断术语属于哪个领域（计算机 / 医学 / 法律 / 金融 / 化学 …），并要求用该领域通行的说法解释。
+### 卸载
 
-线索来自 `sessionQuery`，都经过实测校准（用真实会话数据探针验证过）：
+让 Agent 调用 `plugin_manager` / `action: remove_bundle` / `target: dsh-term-glossary`，或在插件管理页面中禁用、移除该 bundle。
+
+> ⚠️ 开发提示：本仓库的工作树同时是被 `link:` 的插件目录，切换分支会改变 profile 正在加载的插件（例如从 `v3` 切换到 `main` 等于把运行中的插件替换为 0.1.0 实现）。需要对比其他版本时，请使用 `git worktree add ../check <branch>` 在其他目录检出。
+
+## 领域适配
+
+插件不预设术语所属领域。每次请求由 Host 半边读取当前会话自身的内容作为领域线索，交由模型判断术语所属领域（计算机、医学、法律、金融、化学等），并要求使用该领域通行的说法解释。
+
+线索来自 `sessionQuery`，其行为均以真实会话数据验证：
 
 | 线索 | 来源 | 说明 |
 |---|---|---|
-| 会话标题 | `sessionQuery.readTitle` | 一句话点题 |
-| 读者自己说过的话 | `sessionQuery.filterEvents` 的 `user/message` 语义文档 | 取最近 6 条、每条 ≤400 字、总计 ≤1500 字 |
+| 会话标题 | `sessionQuery.readTitle` | 概括会话主题 |
+| 读者发送的消息 | `sessionQuery.filterEvents` 中的 `user/message` 语义文档 | 取最近 6 条，每条不超过 400 字，总计不超过 1500 字 |
 
-两条**实测得出**的清洗规则：
+线索采集包含两条基于实测结果确定的清洗规则：
 
-- **不取 assistant 文档**：真实数据里 assistant 语义文档会渲染整条 surface 消息，工具调用会变成 `write {"content": …}` 这种机器载荷，对判断领域毫无价值，只会挤掉真正的线索。
-- **剔除 DSH 自己的运行时通知**：`Current runtime context. …`、`The approval policy changed …` 这类注入内容在日志里同样是 `user/message`，实测占了 935 字符里的大半；现在被过滤并按文本去重。
+- **不采用 assistant 语义文档**：真实会话中，assistant 文档会渲染整条 surface 消息，工具调用会以 `write {"content": …}` 这类机器载荷出现，对判断领域没有价值，只会挤占有效线索。
+- **剔除 DSH 自身的运行时通知**：`Current runtime context. …`、`The approval policy changed …` 等注入内容在日志中同样属于 `user/message`，实测占用了大量线索长度；现已被过滤，并按文本去重。
 
-代价：每次解释的输入大约多 200–700 token（取决于读者消息长度）；线索是本地读取，实测 20–40 ms，不产生额外模型调用。
-
-## 行为边界
-
-- 只在正文选区上出现：输入框、文本域、可编辑区域内选中不会触发。
-- 解释走的是一次**旁路模型调用**（Host 半边的 `/api/term-glossary/explain` 路由），不写入会话日志、不进入 Agent 上下文、不影响正在进行的轮次。
-- 第三版起框内不再有追问输入：一次解释 = 一次调用。
-- **用哪条模型路由**：优先用**当前会话自己正在用的那条**（它在你机器上一定是通的），其次才是 profile 的默认模型，最后才是插件行 `config` 里显式指定的（显式配置优先级最高）。所以"能正常聊天、插件却报错"这种情况会被自动绕开。
-- 万一真的调用失败，弹框不会只丢一句英文报错，而是告诉你**试过哪些 provider/model**，并说明这是宿主的模型请求出错、不是插件本身。
-- 默认使用 profile 的默认模型（`agent-default-model`，本机为 `deepseek-official / deepseek-flash`）；单次请求超时 60 秒。
-- 框底显示的 token 数字来自 provider 返回的用量（`inputTokens` / `outputTokens` / `totalTokens`，有缓存命中时另列 `cacheReadTokens`）—— 注意该模型的**隐藏推理 token 计入 `outputTokens`**，所以数字会比可见文字对应的量偏大。
-- 输出上限 2400 token：实测该模型的**隐藏推理 token 也计入这个上限**（一次带线索的回答用了 859/900，可见文字只有 248 字就被截断）。现在上限放宽，且若模型确实停在上限，回答会标注「回答达到长度上限」而不是静默给出半句话。
-- 会话线索只在本机读取，随后随该次请求发给同一个模型——也就是本来就在处理这段对话的模型，不产生新的数据暴露面。
-
-## 结构
-
-| 文件 | 作用 |
-|---|---|
-| `index.js` | **字节稳定的 loader shim**：以 `?v=<内容哈希>` 动态载入 `lib/impl.js`，让 Host 侧的改动重装后即可生效，无需重启 dsh（此文件本身不要改） |
-| `lib/impl.js` | Host 半边真正的实现：路由、会话线索采集、提示词、`ctx.llm.stream()` 调用 |
-| `client.js` | 浏览器半边：手写 `__ModuleLoader__` 包，向 `shell.overlay` 槽位注册浮层组件，并通过槽位的 `useSessions` 选择器报告当前会话 id |
-| `cordis.patch.yml` | bundle 补丁：插入 `term-glossary` 行挂载本包 |
-| `locale/{en,zh}.json` | 插件管理页显示的标题与说明 |
-| `icon.svg` | 插件图标（≤256 KiB，相对路径） |
-
-## 配置
-
-行 `term-glossary` 的 `config` 可选（没有 schemastery `Config`，因此不做校验，只做防御性读取）：
-
-```yaml
-- id: term-glossary
-  name: dsh-term-glossary
-  config:
-    provider: deepseek-official
-    model: deepseek-flash
-```
-
-两项都省略时使用 profile 的默认模型选择。
+代价：每次解释的输入增加约 200–700 token，取决于读者消息长度；线索为本地读取，实测耗时 20–40 ms，不产生额外的模型调用。
 
 ## 接口
 
@@ -144,29 +104,71 @@ Body: { term, context?, question?, sessionId?, history?: [{ role, text }] }
 错误: { ok: false, error: { code, message } }
 ```
 
-`usage` 即 provider 的 token 计数（`inputTokens` / `outputTokens` / `totalTokens` / 可选 `cacheReadTokens`），界面直接把它显示在框底；`truncated` 为真表示模型停在上限、回答不完整。
+`usage` 为 provider 的 token 计数（`inputTokens` / `outputTokens` / `totalTokens`，命中缓存时另有 `cacheReadTokens`），界面直接显示于框底；`truncated` 为真表示模型停在上限、回答不完整。
 
-`sessionId` 缺失或格式不合法时静默降级为「无背景线索」；`sessionQuery` 缺失或读取失败同样降级，绝不因此让解释失败。
+`sessionId` 缺失或格式不合法时，静默降级为「无背景线索」；`sessionQuery` 缺失或读取失败同样降级，不会导致解释失败。
 
-`question` 与 `history` 仍被接口接受（一次带历史的调用已由自检覆盖），但第三版的界面不再发它们 —— 框内追问已移除，这两个字段留给以后可能的多轮界面或其他调用方。
+`question` 与 `history` 仍由接口接受（带历史的一次调用已由自检覆盖），但 0.3.0 起的界面不再发送这两个字段：框内追问已移除，字段保留供后续多轮界面或其他调用方使用。
 
-## 本地自检
+## 配置
+
+行 `term-glossary` 的 `config` 为可选项。该行没有 schemastery `Config`，因此不做校验，仅做防御性读取：
+
+```yaml
+- id: term-glossary
+  name: dsh-term-glossary
+  config:
+    provider: deepseek-official
+    model: deepseek-flash
+```
+
+两项均省略时使用 profile 的默认模型选择。
+
+## 行为边界
+
+- 仅在正文选区上触发：在输入框、文本域或可编辑区域内选中不会触发。
+- 解释通过一次旁路模型调用完成（Host 半边的 `/api/term-glossary/explain` 路由），不写入会话日志、不进入 Agent 上下文、不影响正在进行的轮次。
+- 0.3.0 起框内不再提供追问输入，一次解释对应一次调用。
+- **模型路由选择顺序**：行 `config` 显式指定的路由（优先级最高）→ 当前会话正在使用的路由 → profile 默认模型；重复路由会被去重。会话路由是本机可用的路由，因此「对话正常但插件报错」的情况通常可以避免。
+- 仅在传输层失败时自动换用下一条路由重试一次；此类失败发生在生成之前，不额外消耗 token。
+- 调用失败时，提示信息会列出已尝试的 `provider/model`，并说明这是宿主的模型请求出错而非插件本身的问题。
+- 未显式配置路由时，使用 profile 的默认模型（`agent-default-model`）；单次请求超时为 60 秒。
+- 框底显示的 token 数字来自 provider 返回的用量。该模型的隐藏推理 token 计入 `outputTokens`，因此数字会大于可见文字对应的量。
+- 输出上限为 2400 token。该模型的隐藏推理 token 同样计入此上限，因此上限设得远高于可见回答长度；若模型确实停在上限，回答会标注「回答达到长度上限」，不会静默返回不完整内容。
+- 会话线索仅在本机读取，并随该次请求发送给正在处理这段对话的同一模型，不引入新的数据暴露面。
+
+## 自检
 
 ```powershell
 node tools/verify-plugin.mjs
 ```
 
-用假 Cordis 上下文跑通 Host 半边（路由、头部校验、body 校验、模型路由回退、线索采集与清洗、流式拼装、错误码）、shim 装载路径，以及浏览器半边工厂与槽位注册。
+该命令使用模拟的 Cordis 上下文运行 Host 半边（路由、请求头校验、请求体校验、模型路由回退、线索采集与清洗、流式拼装、错误码）与 shim 装载路径，并检查浏览器半边工厂与槽位注册。
 
-## 仓库内容
+## 包结构
 
-仓库根即插件包（`package.json` 在根，`files` 只包含运行期需要的文件）：
+| 文件 | 作用 |
+|---|---|
+| `index.js` | **字节稳定的 loader shim**：以 `?v=<内容哈希>` 动态载入 `lib/impl.js`，使 Host 侧改动在重装后生效而无需重启 dsh（此文件本身不应修改） |
+| `lib/impl.js` | Host 半边实现：路由、会话线索采集、提示词、`ctx.llm.stream()` 调用 |
+| `client.js` | 浏览器半边：手写 `__ModuleLoader__` 包，向 `shell.overlay` 槽位注册浮层组件，并通过槽位的 `useSessions` 选择器上报当前会话 id |
+| `cordis.patch.yml` | bundle 补丁：插入 `term-glossary` 行以挂载本包 |
+| `locale/{en,zh}.json` | 插件管理页显示的标题与说明 |
+| `icon.svg` | 插件图标（不大于 256 KiB，相对路径） |
+
+### 仓库内容
+
+仓库根即插件包，`package.json` 的 `files` 字段只包含运行期所需的文件：
 
 | 路径 | 作用 |
 |---|---|
 | `index.js`、`lib/`、`client.js` | 插件本体（Host 半边、浏览器半边） |
 | `cordis.patch.yml`、`locale/`、`icon.svg` | bundle 补丁、显示文案、图标 |
 | `tools/verify-plugin.mjs` | 本地自检 |
-| `tools/asar.mjs` | 开发时用来从 DSH Desktop 的 `app.asar` 里读取随包文档/源码的小工具 |
+| `tools/asar.mjs` | 开发工具：从 DSH Desktop 的 `app.asar` 中读取随包文档与源码 |
 
-`reference/` 是开发期间从 dsh 安装包中抽出的**内部文档与源码**，已在 `.gitignore` 中排除，不会进入本仓库。
+`reference/` 为开发期间从 dsh 安装包中抽取的内部文档与源码，已在 `.gitignore` 中排除，不进入本仓库。
+
+## 许可证
+
+[MIT](./LICENSE)
