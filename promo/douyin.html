@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>术语速查 · 抖音竖屏分镜（1080×1920）</title>
+<style>
+  :root{
+    --bg:#0d0f14; --panel:#161a22; --panel2:#1d222c;
+    --fg:#f3f5f9; --dim:#9aa4b5; --line:#2a3140;
+    --brand:#4d6bfe; --brand-soft:#7d92ff; --ok:#3ddc97; --warn:#ffd166;
+    --s:1;
+  }
+  *{box-sizing:border-box; -webkit-font-smoothing:antialiased;}
+  html,body{margin:0;height:100%;background:#000;overflow:hidden;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei","PingFang SC",sans-serif;}
+  #viewport{position:fixed;inset:0;display:grid;place-items:center;background:#000;}
+  .stage{
+    position:relative;width:1080px;height:1920px;flex:none;
+    background:radial-gradient(1200px 800px at 50% -10%,#1a2030 0%,#0d0f14 55%,#07080b 100%);
+    color:var(--fg);transform:scale(var(--s));transform-origin:center center;overflow:hidden;
+  }
+  .safe{position:absolute;left:0;right:0;height:14%;background:repeating-linear-gradient(45deg,#fff1,#fff1 12px,#0000 12px,#0000 24px);
+    opacity:0;pointer-events:none;transition:opacity .2s;z-index:99}
+  .safe.top{top:0;border-bottom:1px dashed #fff4}
+  .safe.bottom{bottom:0;border-top:1px dashed #fff4}
+  .stage.guides .safe{opacity:.18}
+  .scene{position:absolute;inset:0;opacity:0;transition:opacity .38s ease;padding:200px 96px;display:flex;flex-direction:column;justify-content:center;gap:34px}
+  .scene.on{opacity:1}
+  .kicker{font-size:36px;letter-spacing:.24em;color:var(--brand-soft);font-weight:700}
+  h1{font-size:112px;line-height:1.14;margin:0;font-weight:800;letter-spacing:-.02em}
+  h1.small{font-size:92px}
+  .accent{color:var(--brand-soft)}
+  .sub{font-size:44px;line-height:1.55;color:var(--dim);margin:0;font-weight:500}
+  .bullets{display:flex;flex-direction:column;gap:26px;margin-top:8px}
+  .bullet{display:flex;gap:22px;align-items:flex-start;font-size:46px;line-height:1.4}
+  .dot{width:20px;height:20px;border-radius:50%;background:var(--brand);flex:none;margin-top:20px;box-shadow:0 0 0 8px #4d6bfe22}
+  .chips{display:flex;flex-wrap:wrap;gap:18px}
+  .chip{font-size:38px;padding:16px 30px;border-radius:999px;border:1px solid var(--line);background:#121722;color:#dfe5f1}
+  .chip.hot{border-color:#4d6bfe66;background:#16203a;color:#cfdaff}
+
+  /* —— 聊天模拟 —— */
+  .chat{background:#0f131b;border:1px solid var(--line);border-radius:28px;padding:40px;display:flex;flex-direction:column;gap:26px}
+  .row{display:flex;gap:18px;align-items:flex-start}
+  .avatar{width:52px;height:52px;border-radius:14px;flex:none;background:linear-gradient(145deg,#4d6bfe,#7d92ff);opacity:.9}
+  .bubble{background:#171c26;border:1px solid #232a37;border-radius:18px;padding:24px 28px;font-size:36px;line-height:1.7;color:#e6eaf3}
+  .bubble.user{background:#1a2440;border-color:#2b3960}
+  .mark{position:relative;color:#fff;background:#4d6bfe33;border-radius:6px;padding:0 6px;box-shadow:inset 0 -3px 0 #4d6bfe99}
+  .mark::after{content:"";position:absolute;inset:-4px -6px;border:2px dashed #4d6bfeaa;border-radius:8px;opacity:0}
+
+  /* 触发按钮 */
+  .trigger{
+    position:absolute;right:150px;top:640px;display:inline-flex;align-items:center;gap:12px;
+    padding:20px 34px;border-radius:999px;background:#171c26;border:1px solid #3a4256;
+    font-size:38px;font-weight:700;color:#f2f5fb;box-shadow:0 18px 46px #0009;opacity:0;transform:translateY(14px) scale(.96)
+  }
+  .trigger .mag{width:26px;height:26px;border-radius:50%;border:3px solid #7d92ff;position:relative}
+  .trigger .mag::after{content:"";position:absolute;right:-9px;bottom:-7px;width:12px;height:3px;background:#7d92ff;transform:rotate(45deg);border-radius:2px}
+
+  /* —— 插件弹框模拟（与真机同一套配色/结构） —— */
+  .pop{position:absolute;left:120px;right:120px;top:760px;background:var(--panel);border:1px solid #2b3342;border-radius:26px;overflow:hidden;box-shadow:0 30px 90px #000b;opacity:0;transform:translateY(20px) scale(.98)}
+  .pop .head{display:flex;align-items:center;gap:16px;padding:26px 30px;border-bottom:1px solid #232a37}
+  .pop .term{font-size:40px;font-weight:800;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pop .badge{font-size:26px;color:var(--dim);font-weight:600}
+  .pop .body{padding:30px;font-size:34px;line-height:1.75;color:#e7ebf3;min-height:260px}
+  .pop .body b{color:#fff}
+  .pop .foot{display:flex;gap:18px;flex-wrap:wrap;align-items:center;padding:20px 30px;border-top:1px solid #232a37;color:var(--dim);font-size:26px;font-variant-numeric:tabular-nums}
+  .spin{width:22px;height:22px;border-radius:50%;border:3px solid #2f3747;border-top-color:#7d92ff;display:inline-block;animation:spin .8s linear infinite;margin-right:14px;vertical-align:-3px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .typing::after{content:"";display:inline-block;width:2px;height:1.05em;background:#7d92ff;margin-left:4px;vertical-align:-.16em;animation:blink 1s steps(1) infinite}
+  @keyframes blink{50%{opacity:0}}
+
+  /* —— 出场动画 —— */
+  .scene.on .rise{animation:rise .62s cubic-bezier(.2,.7,.2,1) both}
+  .scene.on .rise2{animation:rise .62s .14s cubic-bezier(.2,.7,.2,1) both}
+  .scene.on .rise3{animation:rise .62s .28s cubic-bezier(.2,.7,.2,1) both}
+  .scene.on .fade{animation:fade .8s both}
+  @keyframes rise{from{opacity:0;transform:translateY(34px)}to{opacity:1;transform:none}}
+  @keyframes fade{from{opacity:0}to{opacity:1}}
+  @keyframes popIn{0%{opacity:0;transform:translateY(18px) scale(.97)}100%{opacity:1;transform:none}}
+  @keyframes trigIn{0%{opacity:0;transform:translateY(14px) scale(.96)}100%{opacity:1;transform:none}}
+  @keyframes selGrow{from{background-size:0% 100%}to{background-size:100% 100%}}
+
+  /* 场景 2 的选中动画 */
+  .scene.on .selAnim{background-image:linear-gradient(#4d6bfe55,#4d6bfe55);background-repeat:no-repeat;background-size:0% 100%;animation:selGrow .7s .55s ease forwards}
+  .scene.on .trigAnim{animation:trigIn .45s 1.25s cubic-bezier(.2,.7,.2,1) both}
+  /* 场景 3 的弹框动画 */
+  .scene.on .popAnim{animation:popIn .5s .35s cubic-bezier(.2,.7,.2,1) both}
+  .scene.on .thinkShow{animation:fade .3s .7s both}
+  .scene.on .thinkHide{animation:hide .3s 2.1s both}
+  .scene.on .ansShow{animation:fade .5s 2.2s both}
+  .scene.on .footShow{animation:fade .5s 3.0s both}
+  @keyframes hide{to{opacity:0;height:0;overflow:hidden}}
+
+  /* —— 控制条（录屏时按 H 隐藏） —— */
+  .hud{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);display:flex;gap:10px;align-items:center;
+    background:#0009;border:1px solid #ffffff22;border-radius:999px;padding:8px 14px;color:#cfd6e4;font-size:13px;z-index:100;backdrop-filter:blur(8px)}
+  .hud button{all:unset;cursor:pointer;padding:6px 12px;border-radius:999px;background:#ffffff14;color:#e8edf6;font-size:13px}
+  .hud button:hover{background:#ffffff26}
+  .hud .dots{display:flex;gap:6px;margin:0 6px}
+  .hud .d{width:7px;height:7px;border-radius:50%;background:#ffffff3a}
+  .hud .d.on{background:#7d92ff}
+  .hud.hide{display:none}
+  .hint{position:fixed;left:16px;bottom:20px;color:#7b8496;font-size:12px;z-index:100;line-height:1.6}
+</style>
+</head>
+<body>
+<div id="viewport">
+  <div class="stage" id="stage">
+    <div class="safe top"></div><div class="safe bottom"></div>
+
+    <!-- 0 · 封面 -->
+    <section class="scene">
+      <div class="kicker rise">DeepSeek Harness 插件</div>
+      <h1 class="rise2">术语速查</h1>
+      <p class="sub rise3">选中术语，就地解释<br />基本含义 · 用途 · 用法，顺手看 token 成本</p>
+    </section>
+
+    <!-- 1 · 痛点 -->
+    <section class="scene">
+      <div class="kicker rise">读文档 / 看教程时</div>
+      <h1 class="rise2">又遇到<br /><span class="accent">看不懂的术语？</span></h1>
+      <p class="sub rise3">每次都要新开一个对话去问一下，<br />阅读的节奏就断了。</p>
+      <div class="chat rise3" style="margin-top:26px">
+        <div class="row"><div class="avatar"></div><div class="bubble">会话需要保证 <span class="mark">幂等性</span>，重复提交不会产生副作用……</div></div>
+        <div class="row"><div class="avatar" style="background:#2a3140"></div><div class="bubble user" style="color:#9aa4b5">（幂等性是啥？再开个对话问一下…）</div></div>
+      </div>
+    </section>
+
+    <!-- 2 · 一步 -->
+    <section class="scene">
+      <div class="kicker rise">现在只要一步</div>
+      <h1 class="small rise2">选中它，<br />点一下「搜索」</h1>
+      <p class="sub rise3">解释就出现在原地——<br />不用切窗口，也不用新开对话。</p>
+      <div class="chat rise3" style="margin-top:20px;position:relative">
+        <div class="row"><div class="avatar"></div><div class="bubble">会话需要保证 <span class="mark selAnim" style="background:#4d6bfe55">幂等性</span>，重复提交不会产生副作用……</div></div>
+      </div>
+      <div class="trigger trigAnim" style="top:auto;right:160px;position:absolute;bottom:300px;opacity:1">
+        <span class="mag"></span>搜索
+      </div>
+    </section>
+
+    <!-- 3 · 就地解释 -->
+    <section class="scene">
+      <div class="kicker rise">基本含义 · 用途 · 用法</div>
+      <h1 class="small rise2">一次说清</h1>
+      <div class="pop popAnim" style="position:relative;left:0;right:0;top:0;margin-top:10px">
+        <div class="head"><div class="term">幂等性</div><div class="badge">术语速查</div></div>
+        <div class="body">
+          <div class="thinkShow"><span class="spin"></span>正在思考…</div>
+          <div class="ansShow">
+            <b>同一个操作执行一次和多次，对系统状态的影响相同。</b><br />
+            用途：网络超时重试、用户连点提交都不会造成重复扣款；<br />
+            用法：接口带唯一 requestId，服务端记住已处理的请求。
+          </div>
+        </div>
+        <div class="foot footShow">token：输入 204 · 输出 330 · 合计 534 · deepseek-flash</div>
+      </div>
+    </section>
+
+    <!-- 4 · 不打断 -->
+    <section class="scene">
+      <div class="kicker rise">关键是</div>
+      <h1 class="small rise2">它不打断<br />你手上的活</h1>
+      <div class="bullets">
+        <div class="bullet rise3"><span class="dot"></span><div>不写进会话记录，不占上下文轮次</div></div>
+        <div class="bullet rise3"><span class="dot"></span><div>正在跑的任务、正在写的代码，都不受影响</div></div>
+        <div class="bullet rise3"><span class="dot"></span><div>顺手告诉你：这次解释花了多少 token</div></div>
+      </div>
+    </section>
+
+    <!-- 5 · 懂领域 -->
+    <section class="scene">
+      <div class="kicker rise">而且它</div>
+      <h1 class="small rise2">按你正在聊的领域<br />来回答</h1>
+      <p class="sub rise3" style="margin-top:6px">它读的是你这段对话本身，<br />同一个词在医学 / 法律里不会被硬套成技术术语。</p>
+      <div class="chips rise3" style="margin-top:12px">
+        <span class="chip hot">计算机</span><span class="chip">医学</span><span class="chip">法律</span>
+        <span class="chip">金融</span><span class="chip">化学</span><span class="chip">物理</span>
+      </div>
+    </section>
+
+    <!-- 6 · 安装 -->
+    <section class="scene">
+      <div class="kicker rise">30 秒装好</div>
+      <h1 class="small rise2">三步，不用命令行</h1>
+      <div class="bullets" style="margin-top:14px">
+        <div class="bullet rise3"><span class="dot"></span><div>设置 → 插件 → <b>市场</b></div></div>
+        <div class="bullet rise3"><span class="dot"></span><div>搜「<b>术语速查</b>」或 dsh-term-glossary</div></div>
+        <div class="bullet rise3"><span class="dot"></span><div>点安装 → 按 <b>Ctrl + R</b> 刷新</div></div>
+      </div>
+      <p class="sub rise3" style="margin-top:20px">也可以在对话里直接说：<br />「帮我安装插件 dsh-term-glossary」</p>
+    </section>
+
+    <!-- 7 · CTA -->
+    <section class="scene">
+      <div class="kicker rise">DeepSeek Harness 插件</div>
+      <h1 class="rise2">术语速查</h1>
+      <p class="sub rise3">选中术语就地解释 · 不打断对话 · 顺手看成本</p>
+      <div class="chat rise3" style="margin-top:10px">
+        <div class="row"><div class="bubble" style="width:100%">
+          GitHub：<b>github.com/ashz555/dsh-term-glossary</b><br />
+          市场：设置 → 插件 → 市场，搜「术语速查」<br />
+          命令：<b>dsh plugin add dsh-term-glossary</b>
+        </div></div>
+      </div>
+      <p class="sub rise3" style="color:#7d92ff">#DeepSeek &nbsp; #DSH &nbsp; #AI工具 &nbsp; #效率提升</p>
+    </section>
+  </div>
+</div>
+
+<div class="hud" id="hud">
+  <button id="prev">◀</button>
+  <button id="play">▶ 自动播放</button>
+  <button id="next">▶</button>
+  <div class="dots" id="dots"></div>
+  <button id="guide">安全区 G</button>
+</div>
+<div class="hint">← → 切换 · 空格播放/暂停 · G 安全区 · H 隐藏控制条</div>
+
+<script>
+  const stage = document.getElementById('stage')
+  const scenes = [...document.querySelectorAll('.scene')]
+  const dotsBox = document.getElementById('dots')
+  const hud = document.getElementById('hud')
+  const playBtn = document.getElementById('play')
+
+  // 1080×1920 等比缩放到当前窗口
+  function fit(){
+    const s = Math.min(window.innerWidth / 1080, window.innerHeight / 1920)
+    stage.style.setProperty('--s', s)
+  }
+  window.addEventListener('resize', fit); fit()
+
+  // 每个镜头的停留时长（毫秒）——录屏时按此节奏自动推进
+  const DURATION = [1600, 3400, 4200, 5200, 3600, 4200, 4200, 4200]
+  let index = -1, timer = null, playing = false
+
+  scenes.forEach((_, i) => {
+    const d = document.createElement('span'); d.className = 'd'; d.dataset.i = i
+    d.onclick = () => show(i); dotsBox.append(d)
+  })
+  const dots = [...dotsBox.children]
+
+  function show(i){
+    index = (i + scenes.length) % scenes.length
+    scenes.forEach((s, n) => s.classList.toggle('on', n === index))
+    dots.forEach((d, n) => d.classList.toggle('on', n === index))
+    if (playing) schedule()
+  }
+  function schedule(){
+    clearTimeout(timer)
+    timer = setTimeout(() => {
+      if (index === scenes.length - 1){ playing = false; playBtn.textContent = '▶ 自动播放'; return }
+      show(index + 1)
+    }, DURATION[index] || 4000)
+  }
+  function togglePlay(){
+    playing = !playing
+    playBtn.textContent = playing ? '⏸ 暂停' : '▶ 自动播放'
+    if (playing){ if (index < 0 || index === scenes.length - 1) show(0); else schedule() }
+    else clearTimeout(timer)
+  }
+
+  document.getElementById('prev').onclick = () => show(index - 1)
+  document.getElementById('next').onclick = () => show(index + 1)
+  playBtn.onclick = togglePlay
+  document.getElementById('guide').onclick = () => stage.classList.toggle('guides')
+
+  addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowRight') show(index + 1)
+    else if (e.key === 'ArrowLeft') show(index - 1)
+    else if (e.key === ' '){ e.preventDefault(); togglePlay() }
+    else if (e.key.toLowerCase() === 'g') stage.classList.toggle('guides')
+    else if (e.key.toLowerCase() === 'h') hud.classList.toggle('hide')
+  })
+
+  show(0)
+</script>
+</body>
+</html>

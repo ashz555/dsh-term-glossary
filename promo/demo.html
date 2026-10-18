@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>术语速查 · 操作演示（循环，供录屏）</title>
+<style>
+  :root{--bg:#0d0f14;--panel:#161a22;--fg:#f3f5f9;--dim:#9aa4b5;--line:#2a3140;--brand:#4d6bfe;--brand-soft:#7d92ff;--s:1}
+  *{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+  html,body{margin:0;height:100%;background:#000;overflow:hidden;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei","PingFang SC",sans-serif}
+  #viewport{position:fixed;inset:0;display:grid;place-items:center}
+  .stage{position:relative;width:1080px;height:1920px;flex:none;overflow:hidden;transform:scale(var(--s));
+    background:radial-gradient(1100px 760px at 50% -8%,#1a2030 0%,#0d0f14 55%,#07080b 100%);color:var(--fg)}
+  .bar{position:absolute;top:0;left:0;right:0;height:96px;display:flex;align-items:center;gap:16px;padding:0 40px;
+    border-bottom:1px solid #1c2230;color:#8b95a8;font-size:28px}
+  .bar .logo{width:34px;height:34px;border-radius:9px;background:linear-gradient(145deg,#4d6bfe,#7d92ff)}
+  .thread{padding:150px 56px 0;display:flex;flex-direction:column;gap:34px}
+  .row{display:flex;gap:20px;align-items:flex-start}
+  .avatar{width:64px;height:64px;border-radius:16px;flex:none;background:linear-gradient(145deg,#4d6bfe,#7d92ff);opacity:.92}
+  .avatar.you{background:#2a3140}
+  .bubble{background:#171c26;border:1px solid #232a37;border-radius:20px;padding:30px 34px;font-size:40px;line-height:1.75;color:#e6eaf3}
+  .mark{position:relative;color:#fff;border-radius:6px;padding:0 6px}
+  .mark::before{content:"";position:absolute;inset:0;background:#4d6bfe;border-radius:6px;opacity:0;transform:scaleX(0);transform-origin:left center}
+
+  .trigger{position:absolute;left:640px;top:690px;display:inline-flex;align-items:center;gap:14px;padding:22px 38px;border-radius:999px;
+    background:#171c26;border:1px solid #3a4256;font-size:40px;font-weight:700;color:#f2f5fb;box-shadow:0 20px 50px #000a;opacity:0;transform:translateY(16px) scale(.96)}
+  .trigger .mag{width:28px;height:28px;border-radius:50%;border:3px solid #7d92ff;position:relative}
+  .trigger .mag::after{content:"";position:absolute;right:-9px;bottom:-8px;width:13px;height:3px;background:#7d92ff;transform:rotate(45deg);border-radius:2px}
+
+  .pop{position:absolute;left:96px;right:96px;top:790px;background:var(--panel);border:1px solid #2b3342;border-radius:26px;
+    overflow:hidden;box-shadow:0 34px 100px #000c;opacity:0;transform:translateY(22px) scale(.98)}
+  .pop .head{display:flex;align-items:center;gap:16px;padding:28px 32px;border-bottom:1px solid #232a37}
+  .pop .term{font-size:44px;font-weight:800;flex:1}
+  .pop .badge{font-size:28px;color:var(--dim)}
+  .pop .body{padding:32px;font-size:36px;line-height:1.75;color:#e7ebf3;min-height:300px}
+  .pop .body b{color:#fff}
+  .pop .foot{display:flex;gap:18px;flex-wrap:wrap;padding:22px 32px;border-top:1px solid #232a37;color:var(--dim);font-size:28px;
+    font-variant-numeric:tabular-nums;opacity:0}
+  .spin{width:24px;height:24px;border-radius:50%;border:3px solid #2f3747;border-top-color:#7d92ff;display:inline-block;
+    animation:spin .8s linear infinite;margin-right:14px;vertical-align:-3px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .answer{opacity:0}
+
+  /* 时间轴（一个 6 秒循环） */
+  .run .mark::before{animation:hi .5s .35s ease-out forwards}
+  .run .trigger{animation:trigIn .45s 1.05s cubic-bezier(.2,.7,.2,1) forwards}
+  .run .pop{animation:popIn .5s 1.75s cubic-bezier(.2,.7,.2,1) forwards}
+  .run .think{animation:out .25s 3.05s forwards}
+  .run .answer{animation:in .5s 3.2s forwards}
+  .run .foot{animation:in .5s 3.9s forwards}
+
+  @keyframes hi{to{opacity:.55;transform:scaleX(1)}}
+  @keyframes trigIn{to{opacity:1;transform:none}}
+  @keyframes popIn{to{opacity:1;transform:none}}
+  @keyframes out{to{opacity:0}}
+  @keyframes in{to{opacity:1}}
+
+  #hint{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);color:#8b95a8;font-size:13px;background:#0009;
+    border:1px solid #ffffff1f;border-radius:999px;padding:7px 14px;transition:opacity .4s;z-index:9}
+  #hint.gone{opacity:0}
+</style>
+</head>
+<body>
+<div id="viewport">
+  <div class="stage" id="stage">
+    <div class="bar"><span class="logo"></span><span>术语速查 · 演示</span></div>
+    <div class="thread">
+      <div class="row"><div class="avatar"></div>
+        <div class="bubble">会话需要保证 <span class="mark">幂等性</span>，重复提交不会产生副作用……</div></div>
+      <div class="row"><div class="avatar you"></div>
+        <div class="bubble" style="color:#8b95a8">（继续写代码中…）</div></div>
+    </div>
+    <div class="trigger" id="trigger"><span class="mag"></span>搜索</div>
+    <div class="pop" id="pop">
+      <div class="head"><div class="term">幂等性</div><div class="badge">术语速查</div></div>
+      <div class="body">
+        <div class="think"><span class="spin"></span>正在思考…</div>
+        <div class="answer">
+          <b>同一个操作执行一次和多次，对系统状态的影响相同。</b><br />
+          用途：网络重试、连点提交都不会重复扣款；<br />
+          用法：接口带唯一 requestId，服务端记住已处理的请求。
+        </div>
+      </div>
+      <div class="foot">token：输入 204 · 输出 330 · 合计 534 · deepseek-flash</div>
+    </div>
+  </div>
+</div>
+<div id="hint">R 重播 · 空格 暂停/继续 · 6 秒一个循环</div>
+
+<script>
+  const stage = document.getElementById('stage')
+  function fit(){ stage.style.setProperty('--s', Math.min(innerWidth / 1080, innerHeight / 1920)) }
+  addEventListener('resize', fit); fit()
+
+  const LOOP_MS = 6000
+  let timer = null, playing = true
+
+  function run(){
+    clearTimeout(timer)
+    stage.classList.remove('run')
+    void stage.offsetWidth            // 重启动画
+    stage.classList.add('run')
+    timer = setTimeout(() => { if (playing) run() }, LOOP_MS)
+  }
+
+  function toggle(){
+    playing = !playing
+    if (playing) run()
+    else { clearTimeout(timer); stage.classList.remove('run') }
+  }
+
+  addEventListener('keydown', (e) => {
+    if (e.key.toLowerCase() === 'r'){ playing = true; run() }
+    if (e.key === ' '){ e.preventDefault(); toggle() }
+  })
+
+  const hint = document.getElementById('hint')
+  let hideTimer = setTimeout(() => hint.classList.add('gone'), 3000)
+  addEventListener('mousemove', () => {
+    hint.classList.remove('gone')
+    clearTimeout(hideTimer)
+    hideTimer = setTimeout(() => hint.classList.add('gone'), 2500)
+  })
+
+  run()
+</script>
+</body>
+</html>
