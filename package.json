@@ -1,6 +1,6 @@
 {
   "name": "dsh-term-glossary",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "type": "module",
   "description": "Select a term in a DeepSeek Harness conversation and read its explanation in place — meaning, purpose, usage — with the token cost of that answer shown. · 选中对话里的术语就地解释（基本含义 / 用途 / 用法），并显示本次 token 用量。",
   "license": "MIT",
