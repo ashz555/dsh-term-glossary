@@ -9,8 +9,9 @@
   *{box-sizing:border-box;-webkit-font-smoothing:antialiased}
   html,body{margin:0;height:100%;background:#000;overflow:hidden;
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei","PingFang SC",sans-serif}
-  #viewport{position:fixed;inset:0;display:grid;place-items:center}
-  .stage{position:relative;width:1080px;height:1920px;flex:none;overflow:hidden;transform:scale(var(--s));
+  #viewport{position:fixed;inset:0;background:#000;overflow:hidden}
+  .stage{position:absolute;left:50%;top:50%;width:1080px;height:1920px;flex:none;overflow:hidden;
+    transform:translate(-50%,-50%) scale(var(--s));transform-origin:center center;
     background:radial-gradient(1100px 760px at 50% -8%,#1a2030 0%,#0d0f14 55%,#07080b 100%);color:var(--fg)}
   .bar{position:absolute;top:0;left:0;right:0;height:96px;display:flex;align-items:center;gap:16px;padding:0 40px;
     border-bottom:1px solid #1c2230;color:#8b95a8;font-size:28px}

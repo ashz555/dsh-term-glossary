@@ -14,11 +14,11 @@
   *{box-sizing:border-box; -webkit-font-smoothing:antialiased;}
   html,body{margin:0;height:100%;background:#000;overflow:hidden;
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei","PingFang SC",sans-serif;}
-  #viewport{position:fixed;inset:0;display:grid;place-items:center;background:#000;}
+  #viewport{position:fixed;inset:0;background:#000;overflow:hidden;}
   .stage{
-    position:relative;width:1080px;height:1920px;flex:none;
+    position:absolute;left:50%;top:50%;width:1080px;height:1920px;flex:none;
     background:radial-gradient(1200px 800px at 50% -10%,#1a2030 0%,#0d0f14 55%,#07080b 100%);
-    color:var(--fg);transform:scale(var(--s));transform-origin:center center;overflow:hidden;
+    color:var(--fg);transform:translate(-50%,-50%) scale(var(--s));transform-origin:center center;overflow:hidden;
   }
   .safe{position:absolute;left:0;right:0;height:14%;background:repeating-linear-gradient(45deg,#fff1,#fff1 12px,#0000 12px,#0000 24px);
     opacity:0;pointer-events:none;transition:opacity .2s;z-index:99}
@@ -216,7 +216,7 @@
   <div class="dots" id="dots"></div>
   <button id="guide">安全区 G</button>
 </div>
-<div class="hint">← → 切换 · 空格播放/暂停 · G 安全区 · H 隐藏控制条</div>
+<div class="hint">← → 切换 · 空格播放/暂停 · G 安全区 · H 隐藏控制条 · 录屏建议用浏览器「设备模式」设成 1080×1920（窗口太矮时画面会等比变小）</div>
 
 <script>
   const stage = document.getElementById('stage')
