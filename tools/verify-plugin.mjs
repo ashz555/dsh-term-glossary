@@ -95,11 +95,12 @@ function makeCtx(options = {}) {
         return fakeSessionQuery
       }
       if (name === 'agents') {
-        // A live agent whose logged request route differs from the profile default.
-        if (!options.agentsSession) return undefined
-        return {
-          get: () => ({ session: { requestHeader: () => ({ config: options.agentsSession }) } }),
+        // A live Session: `agentsSession` also reports the route it uses.
+        if (options.agentsSession) {
+          return { get: () => ({ session: { requestHeader: () => ({ config: options.agentsSession }) } }) }
         }
+        if (options.liveSession) return { get: () => ({ session: { requestHeader: () => undefined } }) }
+        return undefined
       }
       return undefined
     },
@@ -107,7 +108,7 @@ function makeCtx(options = {}) {
   return { ctx, registered }
 }
 
-const primary = makeCtx()
+const primary = makeCtx({ liveSession: true }) /* the reader's own Session is open */
 assert.deepEqual(host.inject, ['webServer', 'llm'], 'host half must declare its hard dependencies')
 host.apply(primary.ctx, {})
 route = primary.registered.route
@@ -263,7 +264,7 @@ assert.equal(cut.payload.data.truncated, true, 'a capped answer must be reported
 assert.equal(cut.payload.data.answer, '好处是解耦，')
 
 // A failing or absent sessionQuery degrades to a plain answer.
-const throwing = makeCtx({ throwingSessionQuery: true })
+const throwing = makeCtx({ throwingSessionQuery: true, liveSession: true })
 host.apply(throwing.ctx, {})
 const degraded = await call(throwing.registered.route.handler, 'POST', PLUGIN_HEADERS, { term: 'SOAP', sessionId: 'session-1234-abcd' })
 assert.equal(degraded.status, 200)
@@ -459,6 +460,101 @@ assert.match(deadRes.payload.error.message, /不是插件本身/, 'the message m
   assert.ok(text.length <= 401, `error text must be capped (got ${text.length} chars)`)
 }
 
+// Admission control: two look-ups at a time, twenty per rolling minute.
+{
+  let release
+  const waitForRelease = new Promise((resolve) => {
+    release = resolve
+  })
+  let started = 0
+  const slowLlm = {
+    stream() {
+      started += 1
+      return (async function* () {
+        await waitForRelease
+        yield { type: 'text-delta', index: 0, text: 'ok' }
+        yield { type: 'finish', reason: { kind: 'stop' } }
+      })()
+    },
+  }
+  const limited = makeCtx({ llm: slowLlm })
+  host.apply(limited.ctx, {})
+  const handler = limited.registered.route.handler
+  const first = call(handler, 'POST', PLUGIN_HEADERS, { term: 'A' })
+  const second = call(handler, 'POST', PLUGIN_HEADERS, { term: 'B' })
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  const third = await call(handler, 'POST', PLUGIN_HEADERS, { term: 'C' })
+  assert.equal(third.status, 429, 'a third concurrent look-up must be refused')
+  assert.equal(third.payload.error.code, 'TOO_MANY_REQUESTS')
+  assert.equal(started, 2, 'only the admitted calls may reach the model')
+  release()
+  assert.deepEqual((await Promise.all([first, second])).map((result) => result.status), [200, 200])
+}
+
+{
+  const budget = makeCtx()
+  host.apply(budget.ctx, {})
+  const statuses = []
+  for (let index = 0; index < 21; index += 1) {
+    statuses.push((await call(budget.registered.route.handler, 'POST', PLUGIN_HEADERS, { term: `t${index}` })).status)
+  }
+  assert.equal(statuses.filter((status) => status === 200).length, 20, 'twenty look-ups fit in one window')
+  assert.equal(statuses[20], 429, 'the twenty-first is refused')
+}
+
+// Clues are only read for a Session that is actually mounted: an arbitrary id
+// must not pull another conversation's text into the prompt.
+{
+  let reads = 0
+  let captured
+  let registeredRoute
+  const spyLlm = {
+    stream(options) {
+      captured = options
+      return (async function* () {
+        yield { type: 'text-delta', index: 0, text: '答案' }
+        yield { type: 'finish', reason: { kind: 'stop' } }
+      })()
+    },
+  }
+  host.apply(
+    {
+      webServer: {
+        register(candidate) {
+          registeredRoute = candidate
+          return () => {}
+        },
+      },
+      effect() {
+        return () => {}
+      },
+      get(name) {
+        if (name === 'llm') return spyLlm
+        if (name === 'agentDefaultModel') return { currentSelection: () => ({ provider: 'p', model: 'm' }) }
+        if (name === 'sessionQuery') {
+          return {
+            async readTitle() {
+              reads += 1
+              return { title: '别人的会话' }
+            },
+            async filterEvents() {
+              reads += 1
+              return [{ type: 'user/message', text: '别人的机密内容' }]
+            },
+          }
+        }
+        return undefined // no live Session
+      },
+    },
+    {},
+  )
+  const res = makeRes()
+  await registeredRoute.handler(makeReq('POST', PLUGIN_HEADERS, { term: 'x', sessionId: 'session-other' }), res)
+  assert.equal(res.captured.status, 200, 'the look-up itself still works without clues')
+  assert.equal(reads, 0, 'a Session that is not live must never be read')
+  assert.ok(!captured.messages.at(-1).content[0].text.includes('别人的机密内容'))
+}
+
 // Without a default model and without row config the caller gets a usable error.
 const bare = makeCtx({ withoutDefaultModel: true })
 host.apply(bare.ctx, {})
@@ -568,5 +664,14 @@ assert.ok(clientSource.includes('usageLine'), 'usage must be rendered from the r
 // The overlay box must not be torn down by a collapsing page selection: the
 // state it hangs on is only cleared by close().
 assert.ok(!/setEntry\(null\)[\s\S]{0,80}readSelection/.test(clientSource), 'selection tracking must not clear the open box')
+
+// The sentence around the selection is sliced out of the node before any
+// normalisation: a conversation node can hold megabytes, and this runs on every
+// selection change.
+assert.ok(
+  !/String\(element\.textContent \?\? ''\)\.replace\(/u.test(clientSource),
+  'context extraction must not normalise an entire conversation node',
+)
+assert.match(clientSource, /raw\.slice\(start, start \+ 1400\)/u, 'context extraction must be bounded')
 
 console.log('verify-plugin: all checks passed')

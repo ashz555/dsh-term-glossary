@@ -225,8 +225,15 @@ window.__ModuleLoader__.load({
     /** The sentence around the selected term, for a little grounding. */
     function contextAround(element, term) {
       try {
-        const text = String(element.textContent ?? '').replace(/\s+/gu, ' ').trim();
-        const at = text.indexOf(term);
+        // A conversation node can hold megabytes of text; running a regex over
+        // all of it on every selection change would stall the page. Only the
+        // neighbourhood of the selection is ever used, so slice it out first.
+        const raw = String(element.textContent ?? '');
+        const hit = term === '' ? -1 : raw.indexOf(term);
+        const start = hit < 0 ? 0 : Math.max(0, hit - 240);
+        const text = raw.slice(start, start + 1400).replace(/\s+/gu, ' ').trim();
+        if (text === '') return '';
+        const at = term === '' ? -1 : text.indexOf(term);
         if (at < 0) return text.slice(0, 240);
         const from = Math.max(0, at - 120);
         const to = Math.min(text.length, at + term.length + 120);
