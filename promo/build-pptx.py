@@ -206,7 +206,7 @@ title(slide, "三步，不用命令行", size=54)
 for index, line in enumerate([
     "① 设置 → 插件 → 市场",
     "② 搜「术语速查」或 dsh-term-glossary",
-    "③ 点安装 → 按 Ctrl + R 刷新",
+    "③ 点安装",
 ]):
     top = Inches(5.6 + index * 1.9)
     text(slide, PAD, top, INNER, Inches(1.2), [(line, 34, False, FG)])
@@ -216,7 +216,7 @@ text(slide, PAD, Inches(11.3), INNER, Inches(1.6),
 note(
     slide,
     "安装（约 4 秒）。可以插一段真实的插件市场录屏。\n"
-    "口播：'装起来也就三步：设置里进插件市场，搜术语速查，点安装，刷新一下就好。'",
+    "口播：'装起来也就三步：设置里进插件市场，搜术语速查，点安装。'",
 )
 
 # ── 7 · CTA ────────────────────────────────────────────────────────────
@@ -231,8 +231,6 @@ text(slide, PAD + Inches(0.5), Inches(8.2), INNER - Inches(1.0), Inches(2.6), [
     ("市场：设置 → 插件 → 市场，搜「术语速查」", 26, False, RGBColor(0xE7, 0xEB, 0xF3)),
     ("命令：dsh plugin add dsh-term-glossary", 26, True, FG),
 ], spacing=1.5)
-text(slide, PAD, Inches(11.6), INNER, Inches(1.0),
-     [("#DeepSeek  #DSH  #AI工具  #效率提升", 28, True, BRAND)])
 note(
     slide,
     "收尾（约 3 秒）。停住 2 秒方便截图/打字幕。\n"
