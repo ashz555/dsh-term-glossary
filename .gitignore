@@ -8,3 +8,6 @@ probe/
 # Scratch
 node_modules/
 *.log
+
+# Office 打开文档时生成的锁文件
+~\$*
