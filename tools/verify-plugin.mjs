@@ -131,16 +131,38 @@ function makeReq(method, headers, body) {
 
 function makeRes() {
   const captured = { status: 0, headers: null, payload: undefined }
-  return {
+  const listeners = new Map()
+  const res = {
     captured,
+    listeners,
+    writableEnded: false,
+    destroyed: false,
+    once(event, listener) {
+      if (!listeners.has(event)) listeners.set(event, [])
+      listeners.get(event).push(listener)
+      return res
+    },
+    off(event, listener) {
+      const list = listeners.get(event)
+      const at = list ? list.indexOf(listener) : -1
+      if (at >= 0) list.splice(at, 1)
+      return res
+    },
+    /** Simulate the reader closing the box: Node marks the response destroyed. */
+    clientGone() {
+      res.destroyed = true
+      for (const listener of [...(listeners.get('close') ?? [])]) listener()
+    },
     writeHead(status, headers) {
       captured.status = status
       captured.headers = headers
     },
     end(text) {
       captured.payload = text === undefined ? undefined : JSON.parse(text)
+      res.writableEnded = true
     },
   }
+  return res
 }
 
 async function call(handler, method, headers, body) {
@@ -342,6 +364,100 @@ assert.equal(deadRes.payload.error.code, 'TRANSPORT')
 assert.match(deadRes.payload.error.message, /模型调用失败/, 'the message must say what happened in Chinese')
 assert.match(deadRes.payload.error.message, /session-p\/session-m/, 'the message must name the routes tried')
 assert.match(deadRes.payload.error.message, /不是插件本身/, 'the message must point away from the plugin as the fault')
+
+/* ── hardening: disconnect, partial output, error hygiene ─────────────── */
+
+// A reader who closes the box must abort the in-flight model call instead of
+// letting it run to the 60 s deadline, and must not trigger a second attempt.
+{
+  let started = 0
+  let seenSignal
+  const gatedLlm = {
+    stream(options) {
+      started += 1
+      seenSignal = options.signal
+      return (async function* () {
+        await new Promise((resolve, reject) => {
+          const timer = setTimeout(resolve, 3000)
+          options.signal?.addEventListener('abort', () => {
+            clearTimeout(timer)
+            const error = new Error('aborted')
+            error.name = 'AbortError'
+            reject(error)
+          }, { once: true })
+        })
+        yield { type: 'text-delta', index: 0, text: '迟到的答案' }
+        yield { type: 'finish', reason: { kind: 'stop' } }
+      })()
+    },
+  }
+  const gated = makeCtx({ llm: gatedLlm, agentsSession: { provider: 'session-p', model: 'session-m' } })
+  host.apply(gated.ctx, {})
+  const res = makeRes()
+  const pending = gated.registered.route.handler(
+    makeReq('POST', PLUGIN_HEADERS, { term: '闭包', sessionId: 'session-1234-abcd' }),
+    res,
+  )
+  await new Promise((resolve) => setTimeout(resolve, 40))
+  res.clientGone()
+  await pending
+  assert.equal(started, 1, 'a disconnect must not walk to another route')
+  assert.equal(seenSignal?.aborted, true, 'the model call must be aborted when the reader leaves')
+  assert.equal(res.captured.payload, undefined, 'nothing is written to a response the reader already closed')
+}
+
+// A failure that already streamed visible text must NOT be retried: the reader
+// has been charged for that generation once.
+{
+  let attempts = 0
+  const partialLlm = {
+    stream() {
+      attempts += 1
+      if (attempts === 1) {
+        return (async function* () {
+          yield { type: 'text-delta', index: 0, text: '已经生成了一部分内容' }
+          yield { type: 'finish', reason: { kind: 'error', failure: { code: 'TRANSPORT', message: 'socket hang up' } } }
+        })()
+      }
+      return (async function* () {
+        yield { type: 'text-delta', index: 0, text: '不该出现的第二次' }
+        yield { type: 'finish', reason: { kind: 'stop' } }
+      })()
+    },
+  }
+  const partial = makeCtx({ llm: partialLlm, agentsSession: { provider: 'session-p', model: 'session-m' } })
+  host.apply(partial.ctx, {})
+  const partialRes = await call(partial.registered.route.handler, 'POST', PLUGIN_HEADERS, { term: '闭包', sessionId: 'session-1234-abcd' })
+  assert.equal(attempts, 1, 'a failure after partial output must not be retried on the next route')
+  assert.equal(partialRes.status, 502)
+  assert.equal(partialRes.payload.error.code, 'TRANSPORT')
+  assert.doesNotMatch(partialRes.payload.error.message, /不该出现的第二次/)
+}
+
+// Host errors are not echoed verbatim: URLs are redacted and the text is capped.
+{
+  const leakyLlm = {
+    stream() {
+      return (async function* () {
+        yield {
+          type: 'finish',
+          reason: {
+            kind: 'error',
+            failure: { code: 'UPSTREAM', message: `POST https://api.internal.example/v1/chat failed: ${'x'.repeat(400)}` },
+          },
+        }
+      })()
+    },
+  }
+  const leaky = makeCtx({ llm: leakyLlm })
+  host.apply(leaky.ctx, {})
+  const leakyRes = await call(leaky.registered.route.handler, 'POST', PLUGIN_HEADERS, { term: '闭包' })
+  assert.equal(leakyRes.status, 502)
+  const text = leakyRes.payload.error.message
+  assert.doesNotMatch(text, /https?:\/\//, 'URLs from host errors must not reach the page')
+  assert.match(text, /\[url\]/, 'the URL is replaced with a placeholder')
+  assert.ok(text.length <= 401, `error text must be capped (got ${text.length} chars)`)
+}
 
 // Without a default model and without row config the caller gets a usable error.
 const bare = makeCtx({ withoutDefaultModel: true })
