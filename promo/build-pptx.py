@@ -205,7 +205,7 @@ kicker(slide, "30 秒装好")
 title(slide, "三步，不用命令行", size=54)
 for index, line in enumerate([
     "① 设置 → 插件 → 市场",
-    "② 搜「术语速查」或 dsh-term-glossary",
+    "② 搜 dsh-term-glossary",
     "③ 点安装",
 ]):
     top = Inches(5.6 + index * 1.9)
@@ -228,7 +228,7 @@ text(slide, PAD, Inches(5.9), INNER, Inches(1.4),
 box(slide, PAD, Inches(7.8), INNER, Inches(3.2), BUBBLE)
 text(slide, PAD + Inches(0.5), Inches(8.2), INNER - Inches(1.0), Inches(2.6), [
     ("GitHub：github.com/ashz555/dsh-term-glossary", 26, False, RGBColor(0xE7, 0xEB, 0xF3)),
-    ("市场：设置 → 插件 → 市场，搜「术语速查」", 26, False, RGBColor(0xE7, 0xEB, 0xF3)),
+    ("市场：设置 → 插件 → 市场，搜 dsh-term-glossary", 26, False, RGBColor(0xE7, 0xEB, 0xF3)),
     ("命令：dsh plugin add dsh-term-glossary", 26, True, FG),
 ], spacing=1.5)
 note(

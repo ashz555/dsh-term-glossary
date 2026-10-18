@@ -35,7 +35,7 @@
 
 ### 方式一：从插件市场安装（推荐，无需命令行）
 
-打开 **设置 → 插件 → 市场**，搜索「术语速查」或 `dsh-term-glossary`，点击安装即可；安装完成后按 `Ctrl + R` 刷新页面。市场条目已同时关联 npm 包与预构建包，会按可用性自动选择下载来源。
+打开 **设置 → 插件 → 市场**，搜索 `dsh-term-glossary`，点击安装即可；安装完成后按 `Ctrl + R` 刷新页面。市场条目已同时关联 npm 包与预构建包，会按可用性自动选择下载来源。
 
 也可以在 DSH 对话中交由 Agent 完成安装，例如发送：**帮我安装插件 dsh-term-glossary**（等价说法：*用 plugin_manager 的 install_bundle 安装 dsh-term-glossary*）。
 

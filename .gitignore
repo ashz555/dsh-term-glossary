@@ -11,3 +11,6 @@ node_modules/
 
 # Office 打开文档时生成的锁文件
 ~\$*
+
+# 音乐母带（体积大；用 promo/build-music.py 重新生成）
+promo/*.wav
