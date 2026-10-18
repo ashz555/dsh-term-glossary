@@ -1,12 +1,14 @@
 # dsh-term-glossary（术语速查）
 
 [![npm](https://img.shields.io/npm/v/dsh-term-glossary.svg)](https://www.npmjs.com/package/dsh-term-glossary)
+[![awesome · DSH plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com/p/ashz555/dsh-term-glossary/)
+[![dsh.so](https://www.dsh.so/badge/dsh-term-glossary.svg)](https://www.dsh.so/artifact/dsh-term-glossary/)
 
 在 DSH 对话中选中一个术语，点击选区旁的「搜索」按钮，就地查看该术语的解释：基本含义、用途、常见用法，并附带本次回答的 token 用量。解释通过旁路模型调用完成，不占用当前会话的轮次与上下文。
 
 ## 版本
 
-仓库根目录即插件包（`package.json` 位于根目录）。包已发布至 npm：[`dsh-term-glossary`](https://www.npmjs.com/package/dsh-term-glossary)，也可作为 git 依赖或预构建包安装。
+仓库根目录即插件包（`package.json` 位于根目录）。包已发布至 npm：[`dsh-term-glossary`](https://www.npmjs.com/package/dsh-term-glossary)，并已收录进 DSH 插件市场（[精选列表条目](https://awesome-dsh-plugin.com/p/ashz555/dsh-term-glossary/)、[dsh.so 制品页](https://www.dsh.so/artifact/dsh-term-glossary/)），也可作为 git 依赖或预构建包安装。
 
 | 版本 | 标签 | 分支 | 主要变化 |
 |---|---|---|---|
@@ -30,7 +32,13 @@
 
 **前置条件**：带 Web 界面的 DSH，即 Desktop 应用或 `dsh web` 启动的 Web 版本。插件声明了 `webServer` 与 `llm` 两个硬依赖：前者用于注册 `/api/term-glossary/explain` 路由，后者用于发起旁路模型调用；两者缺一时插件不会激活。
 
-### 方式一：从 npm 安装（推荐）
+### 方式一：从插件市场安装（推荐，无需命令行）
+
+打开 **设置 → 插件 → 市场**，搜索「术语速查」或 `dsh-term-glossary`，点击安装即可；安装完成后按 `Ctrl + R` 刷新页面。市场条目已同时关联 npm 包与预构建包，会按可用性自动选择下载来源。
+
+也可以在 DSH 对话中交由 Agent 完成安装，例如发送：**帮我安装插件 dsh-term-glossary**（等价说法：*用 plugin_manager 的 install_bundle 安装 dsh-term-glossary*）。
+
+### 方式二：从 npm 安装
 
 npm 提供的是预构建产物，无需本地构建授权，国内镜像已同步，安装过程不需要访问 GitHub：
 
@@ -38,9 +46,9 @@ npm 提供的是预构建产物，无需本地构建授权，国内镜像已同�
 dsh plugin --profile <profile 名称> add dsh-term-glossary
 ```
 
-也可在 DSH 对话中交由 Agent 完成安装，例如发送：**帮我安装插件 dsh-term-glossary**（等价说法：*用 plugin_manager 的 install_bundle 安装 dsh-term-glossary*）。安装完成后按 `Ctrl + R` 刷新页面即可使用。
+安装完成后按 `Ctrl + R` 刷新页面即可使用。
 
-### 方式二：从源码安装
+### 方式三：从源码安装
 
 适用于需要修改代码，或需要使用 `v2`、`main` 等旧版本的情况。
 
@@ -58,13 +66,13 @@ git clone https://github.com/ashz555/dsh-term-glossary.git
 
 **3. 确认生效。** 安装结果应为 `application: applied`，而非 `restart-required`；随后刷新页面即可使用。若该 profile 此前加载过同名插件的另一份代码（例如插件目录曾变更位置），需要重启一次 dsh 才会切换到新的实现。
 
-**其他安装来源**：也可将本仓库作为 git 依赖安装（`github:ashz555/dsh-term-glossary#v3`），或指向 Release 中的预构建包：
+**其他安装来源**：也可将本仓库作为 git 依赖安装（`github:ashz555/dsh-term-glossary#v3`），或指向 Release 中的预构建包（此地址始终指向最新版本）：
 
 ```powershell
-dsh plugin --profile <profile 名称> add https://github.com/ashz555/dsh-term-glossary/releases/download/v0.3.0/dsh-term-glossary-0.3.0.tgz
+dsh plugin --profile <profile 名称> add https://github.com/ashz555/dsh-term-glossary/releases/latest/download/dsh-term-glossary.tgz
 ```
 
-> **网络受限时的备选方案**：插件市场（设置 → 插件 → 市场，搜索「术语速查」，上架审核通过后可用），或使用上方的 Release 预构建包地址。
+> **网络受限时**：插件市场条目同时提供 npm 包、预构建包与 git 仓库三种来源，任一可达即可安装；其中预构建包与 git 依赖都不需要访问 npm。
 
 ### 安装位置与移动限制
 
