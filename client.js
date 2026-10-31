@@ -535,9 +535,9 @@ window.__ModuleLoader__.load({
         (target) => {
           setPicked(null);
           setEntry(target);
-          // A new term re-anchors the box under the selection; a box the reader
-          // has dragged keeps its place until it is closed.
-          setPosition(null);
+          // A box the reader has dragged keeps its place while they work through
+          // several terms; an untouched box keeps hanging under the selection.
+          // The position is only cleared by the close button.
           // Re-opening a look-up we already paid for is instant and free.
           const remembered = recalledAnswer(cacheKeyOf(target, sessionRef.current));
           if (remembered !== undefined) {
@@ -591,23 +591,11 @@ window.__ModuleLoader__.load({
         };
       }, []);
 
-      // Escape closes; a click outside the box closes.
-      useEffect(() => {
-        if (!entry) return undefined;
-        const onKeyDown = (event) => {
-          if (event.key === 'Escape') close();
-        };
-        const onPointerDown = (event) => {
-          const panel = panelRef.current;
-          if (panel && event.target instanceof Node && !panel.contains(event.target)) close();
-        };
-        document.addEventListener('keydown', onKeyDown, true);
-        document.addEventListener('mousedown', onPointerDown, true);
-        return () => {
-          document.removeEventListener('keydown', onKeyDown, true);
-          document.removeEventListener('mousedown', onPointerDown, true);
-        };
-      }, [entry, close]);
+      // The box is dismissed ONLY by its own close button. It deliberately does
+      // not close on an outside click: looking up a second term means clicking
+      // back into the transcript, and losing the answer being compared would
+      // defeat the point. Escape is left alone too, so a stray key press cannot
+      // throw away an answer either.
 
       const anchor = entry ? clampPanel(entry.rect) : null;
       // A dragged box keeps the reader's position; otherwise it hangs under the

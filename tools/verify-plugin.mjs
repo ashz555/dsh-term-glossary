@@ -793,4 +793,10 @@ assert.match(
   'the cache must be consulted before the request is sent',
 )
 
+// The box must only be dismissed by its own close button: clicking back into the
+// transcript to select the next term must not throw the current answer away.
+assert.ok(clientSource.includes('onClick: close'), 'the × button must be the dismiss control')
+assert.ok(!clientSource.includes("addEventListener('mousedown'"), 'an outside click must not close the box')
+assert.ok(!clientSource.includes("=== 'Escape'"), 'a stray Escape must not close the box either')
+
 console.log('verify-plugin: all checks passed')
