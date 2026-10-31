@@ -41,6 +41,7 @@ window.__ModuleLoader__.load({
         input: 'in',
         output: 'out',
         total: 'total',
+        move: 'Drag the title bar to move · double-click to reset',
       },
       zh: {
         title: '术语速查',
@@ -53,6 +54,7 @@ window.__ModuleLoader__.load({
         input: '输入',
         output: '输出',
         total: '合计',
+        move: '拖动标题栏移动位置 · 双击标题栏复位',
       },
     };
 
@@ -69,7 +71,9 @@ window.__ModuleLoader__.load({
       'border-radius:var(--tg-radius);border:1px solid var(--dsw-alias-border-l1);',
       'background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary);',
       'box-shadow:0 14px 40px rgba(0,0,0,.22);}',
-      '.tg-head{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid var(--dsw-alias-border-l1);}',
+      '.tg-head{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid var(--dsw-alias-border-l1);',
+      'cursor:grab;user-select:none;-webkit-user-select:none;touch-action:none;}',
+      '.tg-head.tg-dragging{cursor:grabbing;}',
       '.tg-term{flex:1;min-width:0;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}',
       '.tg-badge{font-size:11px;font-weight:400;color:var(--dsw-alias-label-secondary);}',
       '.tg-icon{pointer-events:auto;border:0;background:transparent;color:var(--dsw-alias-label-secondary);',
@@ -343,6 +347,10 @@ window.__ModuleLoader__.load({
       const [answer, setAnswer] = useState(null);
       const [busy, setBusy] = useState(false);
       const [error, setError] = useState(null);
+      // Where the reader dragged the box to, or null to sit under the selection.
+      // The position survives new answers and only resets on close / new term.
+      const [position, setPosition] = useState(null);
+      const [dragging, setDragging] = useState(false);
 
       const panelRef = useRef(null);
       const entryRef = useRef(null);
@@ -352,9 +360,66 @@ window.__ModuleLoader__.load({
       // A press on the button may collapse the selection right before the click
       // lands; hold `picked` briefly so the button cannot unmount mid-click.
       const buttonGuardRef = useRef(0);
+      // Drag bookkeeping: grab offset inside the box, plus its size at press.
+      const dragRef = useRef(null);
 
       entryRef.current = entry;
       sessionRef.current = sessionId;
+
+      /** Keep a dragged box inside the viewport. */
+      const clampToViewport = useCallback((left, top, width, height) => {
+        const margin = 8;
+        const maxLeft = Math.max(margin, window.innerWidth - width - margin);
+        const maxTop = Math.max(margin, window.innerHeight - Math.min(height, window.innerHeight - margin * 2) - margin);
+        return {
+          left: Math.min(Math.max(margin, left), maxLeft),
+          top: Math.min(Math.max(margin, top), maxTop),
+        };
+      }, []);
+
+      const onHeadPointerDown = useCallback((event) => {
+        const panel = panelRef.current;
+        if (!panel || event.button !== 0) return;
+        // The close button (and anything actionable) must keep working.
+        if (event.target?.closest?.('button')) return;
+        const rect = panel.getBoundingClientRect();
+        dragRef.current = {
+          pointerId: event.pointerId,
+          offsetX: event.clientX - rect.left,
+          offsetY: event.clientY - rect.top,
+          width: rect.width,
+          height: rect.height,
+        };
+        event.currentTarget.setPointerCapture?.(event.pointerId);
+        setDragging(true);
+        event.preventDefault();
+        event.stopPropagation();
+      }, []);
+
+      const onHeadPointerMove = useCallback(
+        (event) => {
+          const drag = dragRef.current;
+          if (!drag || drag.pointerId !== event.pointerId) return;
+          setPosition(
+            clampToViewport(
+              event.clientX - drag.offsetX,
+              event.clientY - drag.offsetY,
+              drag.width,
+              drag.height,
+            ),
+          );
+          event.preventDefault();
+        },
+        [clampToViewport],
+      );
+
+      const endDrag = useCallback((event) => {
+        const drag = dragRef.current;
+        if (!drag) return;
+        if (event?.pointerId !== undefined && drag.pointerId !== event.pointerId) return;
+        dragRef.current = null;
+        setDragging(false);
+      }, []);
 
       const request = useCallback(async (target) => {
         const previous = requestRef.current;
@@ -399,6 +464,9 @@ window.__ModuleLoader__.load({
       const close = useCallback(() => {
         if (requestRef.current?.controller?.abort) requestRef.current.controller.abort();
         requestRef.current = null;
+        dragRef.current = null;
+        setDragging(false);
+        setPosition(null);
         setEntry(null);
         setAnswer(null);
         setError(null);
@@ -410,10 +478,27 @@ window.__ModuleLoader__.load({
         (target) => {
           setPicked(null);
           setEntry(target);
+          // A new term re-anchors the box under the selection; a box the reader
+          // has dragged keeps its place until it is closed.
+          setPosition(null);
           void request(target);
         },
         [request],
       );
+
+      // A dragged box must stay reachable after the window is resized.
+      useEffect(() => {
+        if (position === null) return undefined;
+        const onResize = () => {
+          const panel = panelRef.current;
+          if (!panel) return;
+          const rect = panel.getBoundingClientRect();
+          const next = clampToViewport(position.left, position.top, rect.width, rect.height);
+          if (next.left !== position.left || next.top !== position.top) setPosition(next);
+        };
+        window.addEventListener('resize', onResize);
+        return () => window.removeEventListener('resize', onResize);
+      }, [position, clampToViewport]);
 
       // Selecting text only offers the button; it does not search on its own.
       useEffect(() => {
@@ -459,7 +544,16 @@ window.__ModuleLoader__.load({
         };
       }, [entry, close]);
 
-      const placement = entry ? clampPanel(entry.rect) : null;
+      const anchor = entry ? clampPanel(entry.rect) : null;
+      // A dragged box keeps the reader's position; otherwise it hangs under the
+      // selection, which is where the eye already is.
+      const placement = anchor
+        ? {
+            width: anchor.width,
+            left: position ? position.left : anchor.left,
+            top: position ? position.top : anchor.top,
+          }
+        : null;
       // The button follows the live selection, unless the open box already
       // answers exactly that term.
       const showButton = picked !== null && (entry === null || entry.term !== picked.term);
@@ -507,7 +601,16 @@ window.__ModuleLoader__.load({
               },
               h(
                 'div',
-                { className: 'tg-head' },
+                {
+                  className: dragging ? 'tg-head tg-dragging' : 'tg-head',
+                  title: t('move'),
+                  onPointerDown: onHeadPointerDown,
+                  onPointerMove: onHeadPointerMove,
+                  onPointerUp: endDrag,
+                  onPointerCancel: endDrag,
+                  // Double-click the title bar to fall back under the selection.
+                  onDoubleClick: () => setPosition(null),
+                },
                 h('span', { className: 'tg-term', title: entry.term }, entry.term),
                 h('span', { className: 'tg-badge' }, t('title')),
                 h('button', { type: 'button', className: 'tg-icon', 'aria-label': t('close'), onClick: close }, '×'),
