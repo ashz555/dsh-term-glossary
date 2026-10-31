@@ -384,41 +384,15 @@ window.__ModuleLoader__.load({
       );
     }
 
-    function GlossaryOverlay(props) {
-      // Called unconditionally so the hook order stays stable for this entry.
-      const useSessions = typeof props?.useSessions === 'function' ? props.useSessions : useNoSession;
-      const sessionId = useSessions(selectMainSessionId);
-
-      // Two independent pieces of state, on purpose:
-      //  - `picked` follows the LIVE page selection and only drives the trigger
-      //    button. It is allowed to disappear when the selection collapses.
-      //  - `entry` is the open box. It is deliberately NOT cleared by a
-      //    collapsing selection: clicking inside the box collapses the
-      //    selection, and clearing it on that event would make the box flash
-      //    away and its controls unclickable.
-      const [picked, setPicked] = useState(null);
-      const [entry, setEntry] = useState(null);
-      const [answer, setAnswer] = useState(null);
-      const [busy, setBusy] = useState(false);
-      const [error, setError] = useState(null);
-      // Where the reader dragged the box to, or null to sit under the selection.
-      // The position survives new answers and only resets on close / new term.
-      const [position, setPosition] = useState(null);
+    /**
+     * One explanation box. Each box owns its own drag state, so several can be
+     * open at once and moved independently; the parent owns the list.
+     */
+    function TermPanel(props) {
+      const { panel, onClose, onDrag, onReset, onRaise } = props;
       const [dragging, setDragging] = useState(false);
-
       const panelRef = useRef(null);
-      const entryRef = useRef(null);
-      const sessionRef = useRef(sessionId);
-      const requestRef = useRef(null);
-      const signatureRef = useRef('');
-      // A press on the button may collapse the selection right before the click
-      // lands; hold `picked` briefly so the button cannot unmount mid-click.
-      const buttonGuardRef = useRef(0);
-      // Drag bookkeeping: grab offset inside the box, plus its size at press.
       const dragRef = useRef(null);
-
-      entryRef.current = entry;
-      sessionRef.current = sessionId;
 
       /** Keep a dragged box inside the viewport. */
       const clampToViewport = useCallback((left, top, width, height) => {
@@ -431,30 +405,34 @@ window.__ModuleLoader__.load({
         };
       }, []);
 
-      const onHeadPointerDown = useCallback((event) => {
-        const panel = panelRef.current;
-        if (!panel || event.button !== 0) return;
-        // The close button (and anything actionable) must keep working.
-        if (event.target?.closest?.('button')) return;
-        const rect = panel.getBoundingClientRect();
-        dragRef.current = {
-          pointerId: event.pointerId,
-          offsetX: event.clientX - rect.left,
-          offsetY: event.clientY - rect.top,
-          width: rect.width,
-          height: rect.height,
-        };
-        event.currentTarget.setPointerCapture?.(event.pointerId);
-        setDragging(true);
-        event.preventDefault();
-        event.stopPropagation();
-      }, []);
+      const onHeadPointerDown = useCallback(
+        (event) => {
+          const node = panelRef.current;
+          if (!node || event.button !== 0) return;
+          // The close button (and anything actionable) must keep working.
+          if (event.target?.closest?.('button')) return;
+          onRaise();
+          const rect = node.getBoundingClientRect();
+          dragRef.current = {
+            pointerId: event.pointerId,
+            offsetX: event.clientX - rect.left,
+            offsetY: event.clientY - rect.top,
+            width: rect.width,
+            height: rect.height,
+          };
+          event.currentTarget.setPointerCapture?.(event.pointerId);
+          setDragging(true);
+          event.preventDefault();
+          event.stopPropagation();
+        },
+        [onRaise],
+      );
 
       const onHeadPointerMove = useCallback(
         (event) => {
           const drag = dragRef.current;
           if (!drag || drag.pointerId !== event.pointerId) return;
-          setPosition(
+          onDrag(
             clampToViewport(
               event.clientX - drag.offsetX,
               event.clientY - drag.offsetY,
@@ -464,7 +442,7 @@ window.__ModuleLoader__.load({
           );
           event.preventDefault();
         },
-        [clampToViewport],
+        [clampToViewport, onDrag],
       );
 
       const endDrag = useCallback((event) => {
@@ -475,95 +453,204 @@ window.__ModuleLoader__.load({
         setDragging(false);
       }, []);
 
-      const request = useCallback(async (target) => {
-        const previous = requestRef.current;
-        if (previous?.controller?.abort) previous.controller.abort();
-        const controller = typeof AbortController === 'function' ? new AbortController() : null;
-        requestRef.current = { controller };
-
-        setBusy(true);
-        setAnswer(null);
-        setError(null);
-        try {
-          const response = await fetch(API_PATH, {
-            method: 'POST',
-            headers: { 'content-type': 'application/json', 'x-dsh-plugin': PLUGIN_ID },
-            body: JSON.stringify({
-              term: target.term,
-              context: target.context,
-              sessionId: sessionRef.current || undefined,
-            }),
-            signal: controller ? controller.signal : undefined,
-          });
-          const payload = await response.json().catch(() => ({}));
-          if (!response.ok || payload?.ok === false) {
-            throw new Error(payload?.error?.message || `HTTP ${response.status}`);
-          }
-          const data = {
-            text: String(payload?.data?.answer ?? '').trim() || t('noAnswer'),
-            truncated: payload?.data?.truncated === true,
-            usage: payload?.data?.usage,
-            model: payload?.data?.model,
-            cached: payload?.data?.cached === true,
-          };
-          rememberAnswer(cacheKeyOf(target, sessionRef.current), data);
-          setAnswer(data);
-        } catch (failure) {
-          if (failure?.name !== 'AbortError') setError(String(failure?.message ?? failure));
-        } finally {
-          if (requestRef.current?.controller === controller) {
-            requestRef.current = null;
-            setBusy(false);
-          }
-        }
-      }, []);
-
-      const close = useCallback(() => {
-        if (requestRef.current?.controller?.abort) requestRef.current.controller.abort();
-        requestRef.current = null;
-        dragRef.current = null;
-        setDragging(false);
-        setPosition(null);
-        setEntry(null);
-        setAnswer(null);
-        setError(null);
-        setBusy(false);
-      }, []);
-
-      /** The reader pressed the button: open the box for that term and search. */
-      const openPanel = useCallback(
-        (target) => {
-          setPicked(null);
-          setEntry(target);
-          // A box the reader has dragged keeps its place while they work through
-          // several terms; an untouched box keeps hanging under the selection.
-          // The position is only cleared by the close button.
-          // Re-opening a look-up we already paid for is instant and free.
-          const remembered = recalledAnswer(cacheKeyOf(target, sessionRef.current));
-          if (remembered !== undefined) {
-            setError(null);
-            setBusy(false);
-            setAnswer(remembered);
-            return;
-          }
-          void request(target);
-        },
-        [request],
-      );
-
       // A dragged box must stay reachable after the window is resized.
       useEffect(() => {
-        if (position === null) return undefined;
+        if (panel.position === null) return undefined;
         const onResize = () => {
-          const panel = panelRef.current;
-          if (!panel) return;
-          const rect = panel.getBoundingClientRect();
-          const next = clampToViewport(position.left, position.top, rect.width, rect.height);
-          if (next.left !== position.left || next.top !== position.top) setPosition(next);
+          const node = panelRef.current;
+          if (!node) return;
+          const rect = node.getBoundingClientRect();
+          const next = clampToViewport(panel.position.left, panel.position.top, rect.width, rect.height);
+          if (next.left !== panel.position.left || next.top !== panel.position.top) onDrag(next);
         };
         window.addEventListener('resize', onResize);
         return () => window.removeEventListener('resize', onResize);
-      }, [position, clampToViewport]);
+      }, [panel.position, clampToViewport, onDrag]);
+
+      const left = panel.position ? panel.position.left : panel.rect.left;
+      const top = panel.position ? panel.position.top : panel.rect.top;
+
+      return h(
+        'div',
+        {
+          ref: panelRef,
+          className: 'tg-panel',
+          role: 'dialog',
+          'aria-label': `${t('title')}：${panel.term}`,
+          style: {
+            left: `${left}px`,
+            top: `${top}px`,
+            width: `${panel.rect.width}px`,
+            maxHeight: `${PANEL_MAX_HEIGHT}px`,
+            zIndex: panel.z,
+          },
+        },
+        h(
+          'div',
+          {
+            className: dragging ? 'tg-head tg-dragging' : 'tg-head',
+            title: t('move'),
+            onPointerDown: onHeadPointerDown,
+            onPointerMove: onHeadPointerMove,
+            onPointerUp: endDrag,
+            onPointerCancel: endDrag,
+            // Double-click the title bar to fall back under the selection.
+            onDoubleClick: () => onReset(),
+          },
+          h('span', { className: 'tg-term', title: panel.term }, panel.term),
+          h('span', { className: 'tg-badge' }, t('title')),
+          h(
+            'button',
+            { type: 'button', className: 'tg-icon', 'aria-label': t('close'), onClick: () => onClose() },
+            '×',
+          ),
+        ),
+        h(
+          'div',
+          { className: 'tg-body' },
+          panel.busy ? h('div', { className: 'tg-thinking' }, h('span', { className: 'tg-spin' }), t('thinking')) : null,
+          panel.answer ? renderRich(panel.answer.text) : null,
+          panel.answer?.truncated ? h('div', { className: 'tg-truncated' }, t('truncated')) : null,
+          panel.error ? h('div', { className: 'tg-error' }, panel.error) : null,
+        ),
+        usageLine(panel.answer),
+      );
+    }
+
+    function GlossaryOverlay(props) {
+      // Called unconditionally so the hook order stays stable for this entry.
+      const useSessions = typeof props?.useSessions === 'function' ? props.useSessions : useNoSession;
+      const sessionId = useSessions(selectMainSessionId);
+
+      // `picked` follows the LIVE page selection and only drives the trigger
+      // button. `panels` is the set of open boxes: one per distinct term, each
+      // with its own position, request and close button, so several terms can be
+      // compared side by side.
+      const [picked, setPicked] = useState(null);
+      const [panels, setPanels] = useState([]);
+
+      const sessionRef = useRef(sessionId);
+      const panelsRef = useRef(panels);
+      const signatureRef = useRef('');
+      const idRef = useRef(0);
+      const zRef = useRef(60);
+      // One AbortController per panel, so closing a box cancels only its call.
+      const controllersRef = useRef(new Map());
+      // A press on the button may collapse the selection right before the click
+      // lands; hold `picked` briefly so the button cannot unmount mid-click.
+      const buttonGuardRef = useRef(0);
+
+      sessionRef.current = sessionId;
+      panelsRef.current = panels;
+
+      /** Replace one panel in place. */
+      const patchPanel = useCallback((id, patch) => {
+        setPanels((current) => current.map((panel) => (panel.id === id ? { ...panel, ...patch } : panel)));
+      }, []);
+
+      const closePanel = useCallback((id) => {
+        const controller = controllersRef.current.get(id);
+        if (controller !== undefined) {
+          controllersRef.current.delete(id);
+          controller.abort?.();
+        }
+        setPanels((current) => current.filter((panel) => panel.id !== id));
+      }, []);
+
+      const raisePanel = useCallback(
+        (id) => {
+          zRef.current += 1;
+          patchPanel(id, { z: zRef.current });
+        },
+        [patchPanel],
+      );
+
+      const searchPanel = useCallback(
+        async (id, target) => {
+          const controller = typeof AbortController === 'function' ? new AbortController() : null;
+          if (controller) controllersRef.current.set(id, controller);
+          patchPanel(id, { busy: true, answer: null, error: null });
+          try {
+            const response = await fetch(API_PATH, {
+              method: 'POST',
+              headers: { 'content-type': 'application/json', 'x-dsh-plugin': PLUGIN_ID },
+              body: JSON.stringify({
+                term: target.term,
+                context: target.context,
+                sessionId: sessionRef.current || undefined,
+              }),
+              signal: controller ? controller.signal : undefined,
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || payload?.ok === false) {
+              throw new Error(payload?.error?.message || `HTTP ${response.status}`);
+            }
+            const data = {
+              text: String(payload?.data?.answer ?? '').trim() || t('noAnswer'),
+              truncated: payload?.data?.truncated === true,
+              usage: payload?.data?.usage,
+              model: payload?.data?.model,
+              cached: payload?.data?.cached === true,
+            };
+            rememberAnswer(cacheKeyOf(target, sessionRef.current), data);
+            patchPanel(id, { busy: false, answer: data });
+          } catch (failure) {
+            if (failure?.name === 'AbortError') return; // the panel was closed
+            patchPanel(id, { busy: false, error: String(failure?.message ?? failure) });
+          } finally {
+            if (controller && controllersRef.current.get(id) === controller) controllersRef.current.delete(id);
+          }
+        },
+        [patchPanel],
+      );
+
+      /** The reader pressed the button: open a box for that term and search. */
+      const openPanel = useCallback(
+        (target) => {
+          setPicked(null);
+          const open = panelsRef.current;
+          const same = (panel) => panel.term === target.term && (panel.context ?? '') === (target.context ?? '');
+
+          // An identical look-up is already on screen: raise it instead of
+          // stacking a duplicate on top of itself.
+          const duplicate = open.find(same);
+          if (duplicate !== undefined) {
+            raisePanel(duplicate.id);
+            return;
+          }
+
+          const base = clampPanel(target.rect);
+          // Cascade, so a new box never lands exactly where an open one sits.
+          let left = base.left;
+          let top = base.top;
+          for (let attempt = 0; attempt < 6; attempt += 1) {
+            const clash = open.some(
+              (panel) => Math.abs(panel.rect.left - left) < 24 && Math.abs(panel.rect.top - top) < 24,
+            );
+            if (!clash) break;
+            left = Math.min(left + 28, Math.max(8, window.innerWidth - base.width - 8));
+            top = Math.min(top + 28, Math.max(8, window.innerHeight - 160));
+          }
+
+          const recalled = recalledAnswer(cacheKeyOf(target, sessionRef.current));
+          const id = (idRef.current += 1);
+          zRef.current += 1;
+          const panel = {
+            id,
+            term: target.term,
+            context: target.context,
+            rect: { left, top, width: base.width },
+            position: null,
+            z: zRef.current,
+            answer: recalled ?? null,
+            busy: recalled === undefined,
+            error: null,
+          };
+          setPanels((current) => [...current, panel]);
+          if (recalled === undefined) void searchPanel(id, target);
+        },
+        [raisePanel, searchPanel],
+      );
 
       // Selecting text only offers the button; it does not search on its own.
       useEffect(() => {
@@ -591,25 +678,15 @@ window.__ModuleLoader__.load({
         };
       }, []);
 
-      // The box is dismissed ONLY by its own close button. It deliberately does
-      // not close on an outside click: looking up a second term means clicking
-      // back into the transcript, and losing the answer being compared would
-      // defeat the point. Escape is left alone too, so a stray key press cannot
-      // throw away an answer either.
+      // Boxes are dismissed ONLY by their own × button: clicking back into the
+      // transcript to pick the next term must not throw an open answer away, and
+      // neither should a stray Escape.
 
-      const anchor = entry ? clampPanel(entry.rect) : null;
-      // A dragged box keeps the reader's position; otherwise it hangs under the
-      // selection, which is where the eye already is.
-      const placement = anchor
-        ? {
-            width: anchor.width,
-            left: position ? position.left : anchor.left,
-            top: position ? position.top : anchor.top,
-          }
-        : null;
-      // The button follows the live selection, unless the open box already
-      // answers exactly that term.
-      const showButton = picked !== null && (entry === null || entry.term !== picked.term);
+      // The button follows the live selection, unless a box already answers that
+      // exact look-up.
+      const showButton =
+        picked !== null &&
+        !panels.some((panel) => panel.term === picked.term && (panel.context ?? '') === (picked.context ?? ''));
 
       return h(
         'div',
@@ -626,6 +703,7 @@ window.__ModuleLoader__.load({
                 style: {
                   left: `${Math.min(picked.rect.right + 6, Math.max(12, window.innerWidth - 96))}px`,
                   top: `${Math.min(picked.rect.bottom + 6, Math.max(12, window.innerHeight - 40))}px`,
+                  zIndex: 999,
                 },
                 onMouseDown: (event) => {
                   // Keep the selection alive so the click below still lands.
@@ -637,48 +715,16 @@ window.__ModuleLoader__.load({
               t('explain'),
             )
           : null,
-        entry && placement
-          ? h(
-              'div',
-              {
-                ref: panelRef,
-                className: 'tg-panel',
-                role: 'dialog',
-                'aria-label': t('title'),
-                style: {
-                  left: `${placement.left}px`,
-                  top: `${placement.top}px`,
-                  width: `${placement.width}px`,
-                  maxHeight: `${PANEL_MAX_HEIGHT}px`,
-                },
-              },
-              h(
-                'div',
-                {
-                  className: dragging ? 'tg-head tg-dragging' : 'tg-head',
-                  title: t('move'),
-                  onPointerDown: onHeadPointerDown,
-                  onPointerMove: onHeadPointerMove,
-                  onPointerUp: endDrag,
-                  onPointerCancel: endDrag,
-                  // Double-click the title bar to fall back under the selection.
-                  onDoubleClick: () => setPosition(null),
-                },
-                h('span', { className: 'tg-term', title: entry.term }, entry.term),
-                h('span', { className: 'tg-badge' }, t('title')),
-                h('button', { type: 'button', className: 'tg-icon', 'aria-label': t('close'), onClick: close }, '×'),
-              ),
-              h(
-                'div',
-                { className: 'tg-body' },
-                busy ? h('div', { className: 'tg-thinking' }, h('span', { className: 'tg-spin' }), t('thinking')) : null,
-                answer ? renderRich(answer.text) : null,
-                answer?.truncated ? h('div', { className: 'tg-truncated' }, t('truncated')) : null,
-                error ? h('div', { className: 'tg-error' }, error) : null,
-              ),
-              usageLine(answer),
-            )
-          : null,
+        panels.map((panel) =>
+          h(TermPanel, {
+            key: panel.id,
+            panel,
+            onClose: () => closePanel(panel.id),
+            onDrag: (position) => patchPanel(panel.id, { position }),
+            onReset: () => patchPanel(panel.id, { position: null }),
+            onRaise: () => raisePanel(panel.id),
+          }),
+        ),
       );
     }
 

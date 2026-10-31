@@ -744,12 +744,192 @@ assert.equal(seen[0]({ byId: {} }), undefined, 'the selector must tolerate an em
 assert.equal(seen[0]({ byId: { a: { id: 'a', retainedBy: { mainView: 0 } }, b: { id: 'b', retainedBy: { mainView: 2 } } } }), 'b')
 assert.ok(treeWithSessions && typeof treeWithSessions === 'object')
 
+/* ── several boxes open at once (behavioural, with a stateful React stub) ── */
+
+{
+  const states = []
+  let cursor = 0
+  let currentStore = { states, cursor: 0 }
+  const React = {
+    createElement: (type, props, ...children) => ({ type, props: props ?? {}, children }),
+    useState(initial) {
+      // A hook belongs to the instance being rendered NOW, so state and setter
+      // are bound to that store rather than to "whatever renders next".
+      const store = currentStore
+      const slot = store.cursor++
+      if (slot >= store.states.length) store.states[slot] = initial
+      return [
+        store.states[slot],
+        (next) => {
+          store.states[slot] = typeof next === 'function' ? next(store.states[slot]) : next
+        },
+      ]
+    },
+    useRef(initial) {
+      const store = currentStore
+      const slot = store.cursor++
+      if (slot >= store.states.length) store.states[slot] = { current: initial }
+      return store.states[slot]
+    },
+    useEffect() {},
+    useCallback: (fn) => fn,
+  }
+
+  const searchedKeys = []
+  const sandbox = {
+    window: {
+      __ModuleLoader__: { load: (entry) => { sandboxEntry = entry } },
+      navigator: { language: 'zh-CN' },
+      innerWidth: 1200,
+      innerHeight: 800,
+      getSelection: () => null,
+      addEventListener() {},
+      removeEventListener() {},
+    },
+    document: { addEventListener() {}, removeEventListener() {} },
+    console,
+    setTimeout,
+    clearTimeout,
+    AbortController: class {
+      constructor() {
+        this.signal = { aborted: false }
+      }
+      abort() {
+        this.signal.aborted = true
+      }
+    },
+    fetch: (_url, options) => {
+      const body = JSON.parse(options.body)
+      searchedKeys.push(body.term)
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          ok: true,
+          data: {
+            answer: `答案：${body.term}`,
+            truncated: false,
+            usage: { inputTokens: 1, outputTokens: 2, totalTokens: 3 },
+            model: { provider: 'p', model: 'm' },
+          },
+        }),
+      })
+    },
+  }
+  let sandboxEntry = null
+  let mounted = null
+  const sandboxCtx = {
+    get: () => undefined,
+    effect: () => () => {},
+    slots: {
+      inject: (slot, callback) => callback(),
+      register: (_options, component) => {
+        mounted = component
+        return () => {}
+      },
+    },
+  }
+  vm.createContext(sandbox)
+  vm.runInContext(clientSource, sandbox)
+  sandboxEntry.factory((name) => {
+    if (name === 'react') return React
+    throw new Error(`unexpected require(${name})`)
+  }).apply(sandboxCtx)
+
+  // Keep one store per component instance, like React does.
+  const stores = new Map()
+  const withStore = (key, render) => {
+    const store = stores.get(key) ?? { states: [], cursor: 0 }
+    stores.set(key, store)
+    const previous = currentStore
+    currentStore = store
+    store.cursor = 0 // every render starts reading hooks from the first slot
+    try {
+      return render()
+    } finally {
+      currentStore = previous
+    }
+  }
+  const rootStore = () => withStore('root', () => {}) ?? stores.get('root')
+  withStore('root', () => mounted({}))
+
+  const flatten = (node, out = []) => {
+    if (node === null || node === undefined) return out
+    if (Array.isArray(node)) {
+      for (const kid of node) flatten(kid, out)
+      return out
+    }
+    if (typeof node !== 'object') return out
+    out.push(node)
+    flatten(node.children, out)
+    return out
+  }
+  /** Render the root plus every panel element it rendered. */
+  const mount = () => {
+    const root = withStore('root', () => mounted({}))
+    const panels = flatten(root.children).filter((node) => typeof node.type === 'function' && node.props?.panel)
+    const rendered = panels.map((node) => withStore(`panel-${node.props.panel.id}`, () => node.type(node.props)))
+    return { root, rendered, elements: panels }
+  }
+  const byClass = (nodes, className) => flatten(nodes).filter((node) => node.props?.className === className)
+  const terms = (view) => view.rendered.map((panel) => byClass(panel, 'tg-term')[0]?.children?.[0])
+
+  const select = (term, context) => {
+    withStore('root', () => mounted({}))
+    rootStore().states[0] = { term, context, rect: { left: 40, right: 120, top: 60, bottom: 80 } }
+  }
+  const clickTrigger = () => {
+    const view = mount()
+    const button = byClass(view.root, 'tg-pill')[0]
+    assert.ok(button, 'the trigger button must be rendered for a fresh selection')
+    button.props.onClick()
+  }
+  const settle = async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
+
+  // First look-up.
+  select('幂等性', '会话需要保证幂等性。')
+  clickTrigger()
+  await settle()
+  let view = mount()
+  assert.equal(view.rendered.length, 1, 'the first search opens one box')
+  assert.deepEqual(terms(view), ['幂等性'])
+
+  // A second term opens a SECOND box instead of replacing the first.
+  select('死锁', '两个线程互相等待，形成死锁。')
+  clickTrigger()
+  await settle()
+  view = mount()
+  assert.equal(view.rendered.length, 2, 'a second term must add a box, not replace the open one')
+  assert.deepEqual(terms(view), ['幂等性', '死锁'])
+  assert.equal(searchedKeys.length, 2, 'both terms were actually looked up')
+  assert.ok(byClass(view.rendered[1], 'tg-body')[0], 'the second box has its own body')
+
+  // Closing one box leaves the other untouched.
+  const closeButton = byClass(view.rendered[0], 'tg-icon')[0]
+  assert.ok(closeButton, 'every box carries its own × control')
+  closeButton.props.onClick()
+  view = mount()
+  assert.equal(view.rendered.length, 1, '× closes only its own box')
+  assert.deepEqual(terms(view), ['死锁'])
+
+  // A look-up that is already open offers no trigger at all, so a duplicate box
+  // cannot be created for the same term+context.
+  select('死锁', '两个线程互相等待，形成死锁。')
+  view = mount()
+  assert.equal(byClass(view.root, 'tg-pill').length, 0, 'an already-open look-up offers no trigger button')
+  assert.equal(view.rendered.length, 1, 'and no second box appears')
+  assert.equal(searchedKeys.length, 2, 'nothing new was searched')
+}
+
+
 // Selecting text only offers a button; the search itself starts on that click.
 const countOf = (text, needle) => text.split(needle).length - 1
 assert.ok(clientSource.includes('tg-pill'), 'the trigger button must exist')
 assert.ok(clientSource.includes("t('explain')"), 'the button must carry a label')
 assert.ok(clientSource.includes('onClick: () => openPanel(picked)'), 'the button click is what opens the box')
-assert.equal(countOf(clientSource, 'void request('), 1, 'the search must start from exactly one place (openPanel)')
+assert.equal(countOf(clientSource, 'void searchPanel('), 1, 'the search must start from exactly one place (openPanel)')
 assert.ok(clientSource.includes('buttonGuardRef'), 'a press on the button must not unmount it before the click lands')
 
 // The follow-up input stays removed.
@@ -789,14 +969,22 @@ assert.ok(clientSource.includes('recalledAnswer'), 'the client must reuse a cach
 assert.ok(clientSource.includes('缓存命中'), 'a cached opening must say so in the footer')
 assert.match(
   clientSource,
-  /recalledAnswer\([\s\S]{0,600}void request\(target\)/u,
+  /recalledAnswer\([\s\S]{0,900}void searchPanel\(/u,
   'the cache must be consulted before the request is sent',
 )
 
 // The box must only be dismissed by its own close button: clicking back into the
 // transcript to select the next term must not throw the current answer away.
-assert.ok(clientSource.includes('onClick: close'), 'the × button must be the dismiss control')
-assert.ok(!clientSource.includes("addEventListener('mousedown'"), 'an outside click must not close the box')
-assert.ok(!clientSource.includes("=== 'Escape'"), 'a stray Escape must not close the box either')
+assert.ok(clientSource.includes("'aria-label': t('close')"), 'each box must carry its own × control')
+assert.ok(clientSource.includes('onClose: () => closePanel(panel.id)'), '× removes only that box')
+assert.ok(!clientSource.includes("addEventListener('mousedown'"), 'an outside click must not close a box')
+assert.ok(!clientSource.includes("=== 'Escape'"), 'a stray Escape must not close a box either')
+
+// Several boxes must be able to coexist, each with its own position and request.
+assert.ok(clientSource.includes('panels.map('), 'every open look-up renders its own box')
+assert.ok(clientSource.includes('function TermPanel'), 'one box is one component with its own drag state')
+assert.ok(clientSource.includes('controllersRef'), 'each box aborts only its own request')
+assert.ok(clientSource.includes('const closePanel'), 'closing is per box')
+assert.ok(clientSource.includes('const duplicate = open.find(same)'), 'an identical look-up is raised, not duplicated')
 
 console.log('verify-plugin: all checks passed')
