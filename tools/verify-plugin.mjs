@@ -562,6 +562,107 @@ const bareRes = await call(bare.registered.route.handler, 'POST', PLUGIN_HEADERS
 assert.equal(bareRes.status, 503)
 assert.equal(bareRes.payload.error.code, 'NO_MODEL_ROUTE')
 
+/* ── answer cache: a repeat look-up must not be paid for twice ─────────── */
+
+{
+  let calls = 0
+  const countingLlm = {
+    stream() {
+      calls += 1
+      return (async function* () {
+        yield { type: 'text-delta', index: 0, text: '缓存的答案。' }
+        yield { type: 'usage', usage: { inputTokens: 10, outputTokens: 20, totalTokens: 30 } }
+        yield { type: 'finish', reason: { kind: 'stop' } }
+      })()
+    },
+  }
+  const cached = makeCtx({ llm: countingLlm })
+  host.apply(cached.ctx, {})
+  const handler = cached.registered.route.handler
+  const body = { term: '闭包', context: '于是我们用闭包保存状态。' }
+  const first = await call(handler, 'POST', PLUGIN_HEADERS, body)
+  const second = await call(handler, 'POST', PLUGIN_HEADERS, body)
+  assert.equal(first.status, 200)
+  assert.equal(first.payload.data.cached, false, 'the first look-up is a real call')
+  assert.equal(second.status, 200)
+  assert.equal(second.payload.data.cached, true, 'reopening the same term is served from cache')
+  assert.equal(second.payload.data.answer, first.payload.data.answer)
+  assert.deepEqual(second.payload.data.usage, first.payload.data.usage, 'the cached answer keeps its original usage')
+  assert.equal(calls, 1, 'the model must be called exactly once')
+
+  const otherContext = await call(handler, 'POST', PLUGIN_HEADERS, { term: '闭包', context: '闭包在 JS 里很常见。' })
+  assert.equal(otherContext.payload.data.cached, false, 'a different sentence is a different look-up')
+  assert.equal(calls, 2)
+
+  const otherTerm = await call(handler, 'POST', PLUGIN_HEADERS, { term: '作用域' })
+  assert.equal(otherTerm.payload.data.cached, false, 'a different term is a different look-up')
+  assert.equal(calls, 3)
+}
+
+// Cache hits bypass the per-minute budget: twenty-one repeats all succeed while
+// the model runs once.
+{
+  let calls = 0
+  const llm = {
+    stream() {
+      calls += 1
+      return (async function* () {
+        yield { type: 'text-delta', index: 0, text: 'ok' }
+        yield { type: 'finish', reason: { kind: 'stop' } }
+      })()
+    },
+  }
+  const cached = makeCtx({ llm })
+  host.apply(cached.ctx, {})
+  const statuses = []
+  for (let index = 0; index < 21; index += 1) {
+    statuses.push((await call(cached.registered.route.handler, 'POST', PLUGIN_HEADERS, { term: '缓存直觉' })).status)
+  }
+  assert.equal(statuses.filter((status) => status === 200).length, 21, 'every repeat is served')
+  assert.equal(calls, 1, 'cache hits must not consume the rate window')
+}
+
+// `cacheTtlMs: 0` in the row config turns caching off.
+{
+  let calls = 0
+  const llm = {
+    stream() {
+      calls += 1
+      return (async function* () {
+        yield { type: 'text-delta', index: 0, text: 'x' }
+        yield { type: 'finish', reason: { kind: 'stop' } }
+      })()
+    },
+  }
+  const uncached = makeCtx({ llm })
+  host.apply(uncached.ctx, { cacheTtlMs: 0 })
+  const handler = uncached.registered.route.handler
+  await call(handler, 'POST', PLUGIN_HEADERS, { term: '缓存直觉' })
+  const second = await call(handler, 'POST', PLUGIN_HEADERS, { term: '缓存直觉' })
+  assert.equal(second.payload.data.cached, false)
+  assert.equal(calls, 2, 'cacheTtlMs: 0 must disable the cache')
+}
+
+// The cache primitive itself: eviction, expiry, and the off switch.
+{
+  const small = host.createCache(60_000, 2)
+  small.set('a', 1)
+  small.set('b', 2)
+  small.set('c', 3)
+  assert.equal(small.size, 2, 'the cache keeps at most maxEntries')
+  assert.equal(small.get('a'), undefined, 'the least recently used entry is evicted')
+  assert.equal(small.get('c'), 3, 'the newest entry survives')
+
+  const expiring = host.createCache(1, 10)
+  expiring.set('k', 'v')
+  await new Promise((resolve) => setTimeout(resolve, 10))
+  assert.equal(expiring.get('k'), undefined, 'entries expire after their TTL')
+
+  const off = host.createCache(0, 10)
+  off.set('k', 'v')
+  assert.equal(off.get('k'), undefined, 'ttl 0 disables caching')
+}
+
 /* ── loader shim: the entry must mount the impl in-process ────────────── */
 
 const shim = await import(new URL('index.js', pkgDir).href)
@@ -682,5 +783,14 @@ assert.ok(clientSource.includes('onDoubleClick'), 'double-clicking the title bar
 assert.ok(clientSource.includes("closest?.('button')"), 'the close button must not start a drag')
 assert.ok(clientSource.includes('clampToViewport'), 'a dragged box must stay inside the viewport')
 assert.ok(clientSource.includes('onPointerMove'), 'dragging must track the pointer')
+
+// Reopening a paid-for look-up must not hit the network again.
+assert.ok(clientSource.includes('recalledAnswer'), 'the client must reuse a cached answer')
+assert.ok(clientSource.includes('缓存命中'), 'a cached opening must say so in the footer')
+assert.match(
+  clientSource,
+  /recalledAnswer\([\s\S]{0,600}void request\(target\)/u,
+  'the cache must be consulted before the request is sent',
+)
 
 console.log('verify-plugin: all checks passed')
