@@ -480,15 +480,18 @@ assert.match(deadRes.payload.error.message, /不是插件本身/, 'the message m
   const limited = makeCtx({ llm: slowLlm })
   host.apply(limited.ctx, {})
   const handler = limited.registered.route.handler
-  const first = call(handler, 'POST', PLUGIN_HEADERS, { term: 'A' })
-  const second = call(handler, 'POST', PLUGIN_HEADERS, { term: 'B' })
+  // The gate admits four at once; the fifth in the same instant is rejected.
+  const admitted = ['A', 'B', 'C', 'D'].map((term) => call(handler, 'POST', PLUGIN_HEADERS, { term }))
   await new Promise((resolve) => setTimeout(resolve, 30))
-  const third = await call(handler, 'POST', PLUGIN_HEADERS, { term: 'C' })
-  assert.equal(third.status, 429, 'a third concurrent look-up must be refused')
-  assert.equal(third.payload.error.code, 'TOO_MANY_REQUESTS')
-  assert.equal(started, 2, 'only the admitted calls may reach the model')
+  const refused = await call(handler, 'POST', PLUGIN_HEADERS, { term: 'E' })
+  assert.equal(refused.status, 429, 'a fifth concurrent look-up must be refused')
+  assert.equal(refused.payload.error.code, 'TOO_MANY_REQUESTS')
+  assert.equal(started, 4, 'only the admitted calls may reach the model')
   release()
-  assert.deepEqual((await Promise.all([first, second])).map((result) => result.status), [200, 200])
+  assert.deepEqual(
+    (await Promise.all(admitted)).map((result) => result.status),
+    [200, 200, 200, 200],
+  )
 }
 
 {
