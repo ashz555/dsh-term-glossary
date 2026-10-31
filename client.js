@@ -42,6 +42,7 @@ window.__ModuleLoader__.load({
         output: 'out',
         total: 'total',
         move: 'Drag the title bar to move · double-click to reset',
+        cached: 'cached · no model call this time',
       },
       zh: {
         title: '术语速查',
@@ -55,8 +56,44 @@ window.__ModuleLoader__.load({
         output: '输出',
         total: '合计',
         move: '拖动标题栏移动位置 · 双击标题栏复位',
+        cached: '缓存命中 · 本次未调用模型',
       },
     };
+
+    /**
+     * Answers already paid for, kept for this page session. The Host has its own
+     * cache (which a page refresh still benefits from); this one makes reopening
+     * a term instant, with no round trip at all.
+     */
+    const answerCache = new Map();
+    const ANSWER_CACHE_MAX = 40;
+    const ANSWER_CACHE_TTL_MS = 30 * 60 * 1000;
+
+    function cacheKeyOf(target, sessionId) {
+      return `${target.term}\u0000${target.context ?? ''}\u0000${sessionId || ''}`;
+    }
+
+    /** Remember one paid-for answer; oldest entries fall off the end. */
+    function rememberAnswer(key, data) {
+      answerCache.delete(key);
+      answerCache.set(key, { data, at: Date.now() });
+      while (answerCache.size > ANSWER_CACHE_MAX) {
+        const oldest = answerCache.keys().next();
+        if (oldest.done === true) break;
+        answerCache.delete(oldest.value);
+      }
+    }
+
+    /** The remembered answer for this look-up, or undefined when stale/absent. */
+    function recalledAnswer(key) {
+      const hit = answerCache.get(key);
+      if (hit === undefined) return undefined;
+      if (Date.now() - hit.at > ANSWER_CACHE_TTL_MS) {
+        answerCache.delete(key);
+        return undefined;
+      }
+      return { ...hit.data, cached: true };
+    }
 
     const CSS = [
       '[data-term-glossary]{--tg-radius:10px;font-size:13px;line-height:1.6;}',
@@ -306,7 +343,24 @@ window.__ModuleLoader__.load({
 
     /** How many tokens that answer cost, plus the route that produced it. */
     function usageLine(answer) {
-      const usage = answer?.usage;
+      if (!answer) return null;
+      // A cached answer was paid for earlier: show that plainly instead of
+      // presenting the old token count as the cost of this opening.
+      if (answer.cached === true) {
+        return h(
+          'div',
+          { className: 'tg-foot' },
+          h('span', { className: 'tg-usage' }, t('cached')),
+          answer.model
+            ? h(
+                'span',
+                { className: 'tg-model', title: `${answer.model.provider}/${answer.model.model}` },
+                `${answer.model.provider}/${answer.model.model}`,
+              )
+            : null,
+        );
+      }
+      const usage = answer.usage;
       if (!usage) return null;
       const input = Number(usage.inputTokens) || 0;
       const output = Number(usage.outputTokens) || 0;
@@ -445,12 +499,15 @@ window.__ModuleLoader__.load({
           if (!response.ok || payload?.ok === false) {
             throw new Error(payload?.error?.message || `HTTP ${response.status}`);
           }
-          setAnswer({
+          const data = {
             text: String(payload?.data?.answer ?? '').trim() || t('noAnswer'),
             truncated: payload?.data?.truncated === true,
             usage: payload?.data?.usage,
             model: payload?.data?.model,
-          });
+            cached: payload?.data?.cached === true,
+          };
+          rememberAnswer(cacheKeyOf(target, sessionRef.current), data);
+          setAnswer(data);
         } catch (failure) {
           if (failure?.name !== 'AbortError') setError(String(failure?.message ?? failure));
         } finally {
@@ -481,6 +538,14 @@ window.__ModuleLoader__.load({
           // A new term re-anchors the box under the selection; a box the reader
           // has dragged keeps its place until it is closed.
           setPosition(null);
+          // Re-opening a look-up we already paid for is instant and free.
+          const remembered = recalledAnswer(cacheKeyOf(target, sessionRef.current));
+          if (remembered !== undefined) {
+            setError(null);
+            setBusy(false);
+            setAnswer(remembered);
+            return;
+          }
           void request(target);
         },
         [request],
