@@ -674,4 +674,13 @@ assert.ok(
 )
 assert.match(clientSource, /raw\.slice\(start, start \+ 1400\)/u, 'context extraction must be bounded')
 
+// The box must be movable: drag it by the title bar, keep it on screen, reset on
+// double-click, and never let the close button turn into a drag handle.
+assert.ok(clientSource.includes('setPointerCapture'), 'the box must be draggable by its title bar')
+assert.ok(clientSource.includes('tg-dragging'), 'dragging must have a visual state')
+assert.ok(clientSource.includes('onDoubleClick'), 'double-clicking the title bar must reset the position')
+assert.ok(clientSource.includes("closest?.('button')"), 'the close button must not start a drag')
+assert.ok(clientSource.includes('clampToViewport'), 'a dragged box must stay inside the viewport')
+assert.ok(clientSource.includes('onPointerMove'), 'dragging must track the pointer')
+
 console.log('verify-plugin: all checks passed')
