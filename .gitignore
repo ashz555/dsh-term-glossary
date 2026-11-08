@@ -9,8 +9,8 @@ probe/
 node_modules/
 *.log
 
-# Office 打开文档时生成的锁文件
+# Office lock files (created next to a document while PowerPoint/Word has it open)
 ~\$*
 
-# 音乐母带（体积大；用 promo/build-music.py 重新生成）
-promo/*.wav
+# 瀹ｄ紶绱犳潗锛堟姈闊冲浘鏂囥�侀厤涔愩�佹紨绀洪〉绛夛級锛氬彧鍦ㄦ湰鍦颁繚鐣欙紝涓嶈繘浠撳簱
+promo/
